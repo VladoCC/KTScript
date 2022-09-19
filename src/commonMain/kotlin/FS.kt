@@ -1,0 +1,1 @@
+expect fun save(text: String, filepath: String)
