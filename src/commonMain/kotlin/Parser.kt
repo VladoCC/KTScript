@@ -5,8 +5,7 @@ enum class Task {
 }
 
 fun compile(code: String, task: Task) {
-    val compiler = compiler {
-        val code1 = code
+    val parser = parser {
         val file = nonTerm("file")
         val packageHeader = nonTerm("packageHeader")
         val importHeader = nonTerm("importHeader")
@@ -170,20 +169,7 @@ fun compile(code: String, task: Task) {
         val unsignedLiteral = nonTerm("unsignedLiteral")
         val numberLiteral = nonTerm("numberLiteral")
 
-        val lineStringLiteral = customTerm(
-            { code ->
-                var str = ""
-                if (code.current.startsWith("\"\"\"")) {
-                    str += "\"\"\""
-                } else if (code.current.startsWith("\"")) {
-                    str += "\""
-                }
-                Compiler.Token(str, code.position, setOf("string"), code.consumed)
-            },
-            { it ->
-                it.tags.contains("string")
-            }
-        )
+        val lineStringLiteral = registerTerm()
         val lineStringElement = nonTerm("lineStringElement")
         val lineStringContent = nonTerm("lineStringContent")
         val multiLineStringLiteral = nonTerm("multiLineStringLiteral")
@@ -848,9 +834,9 @@ fun compile(code: String, task: Task) {
         rule(semiInternal, newline or semicolon)
     }
     when (task) {
-        Task.COMPILE -> compiler.process(code)
+        Task.COMPILE -> parser.process(code)
         Task.AST_DOT -> {
-            save(compiler.ast(code), "ast.dot")
+            save(parser.astDotString(code), "ast.dot")
         }
     }
 }
@@ -910,14 +896,73 @@ class Code(private val text: String) {
     }
 }
 
-fun compiler(init: Compiler.() -> Unit): Compiler {
-    with(Compiler()) {
+fun parser(init: Parser.() -> Unit): Parser {
+    with(Parser()) {
         init()
         return this
     }
 }
 
-class Compiler {
+class StringLexeme(val string: String): Parser.TerminalLexeme() {
+    override fun token(code: Code): Parser.Token? {
+        var str = ""
+        if (code.current.startsWith("\"\"\"")) {
+            str += "\"\"\""
+        } else if (code.current.startsWith("\"")) {
+            val strContent = code.current.drop(1).dropWhile { it == '"' }
+
+            str += "\""
+        }
+        return Parser.Token(str, code.position, setOf("string"), code.consumed)
+    }
+
+    override fun match(token: Parser.Token) = token.tags.contains("string")
+
+    interface Matcher {
+        fun match(input: String): Result?
+    }
+
+    class RegexMatcher(private val regex: Regex): Matcher {
+        override fun match(input: String): Result? {
+            return regex.find(input)?.let { if (it.range.first == 0) TextResult(it.value) else null }
+        }
+    }
+
+    class IdentifierMatcher(): Matcher {
+        override fun match(input: String): ParsableResult? {
+            TODO("Not yet implemented")
+        }
+    }
+
+    class ExpressionMatcher(private val parser: Parser): Matcher {
+        override fun match(input: String): ParsableResult? {
+            if (!input.startsWith("\${")) {
+                return null
+            }
+            var counter = 0
+            val exp = input.takeWhile {
+                if (it == '{') {
+                    counter++
+                } else if (it == '}') {
+                    counter--
+                }
+                counter > 0 ||it != '}'
+            }.drop(2)
+            return parser.process(exp)?.let { ParsableResult(it) }
+        }
+    }
+
+    sealed interface Result
+    class TextResult(val text: String): Result
+    class ParsableResult(tree: Parser.AST): Result {
+        fun produce(): String {
+            TODO()
+        }
+    }
+}
+
+// TODO rename correctly
+class Parser {
     private val grammar = mutableListOf<Rule>()
 
     private lateinit var table: Table
@@ -927,14 +972,15 @@ class Compiler {
     val root = nonTerm()
     val newline = regTerm("\\n\\s*", "newline")
 
-    fun process(code: String) {
+    fun process(code: String): AST? {
         val tokens = tokenize(Code(code))
         if (tokens.isNotEmpty()) {
-            parse(tokens)
+            return parse(tokens)
         }
+        return null
     }
 
-    fun ast(code: String): String {
+    fun astDotString(code: String): String {
         val tokens = tokenize(Code(code))
         if (tokens.isNotEmpty()) {
             return parse(tokens)?.dotGraph()?: ""
@@ -1103,6 +1149,7 @@ class Compiler {
         terminals.add(lex)
         return lex
     }
+    fun registerTerm(lex: TerminalLexeme) = terminals.add(lex).let { lex }
     fun optional(product: OptionalProduct) = product.produce().toTypedArray()
     fun optional(product: Product): Optional = arrayOf(product)
     fun optional(lexeme: Lexeme): Optional = optional(Product(lexeme))
@@ -1177,9 +1224,6 @@ class Compiler {
     abstract class TerminalLexeme: Lexeme() {
         abstract fun token(code: Code): Token?
         abstract fun match(token: Token): Boolean
-        fun notSupported() {
-            TODO()
-        }
     }
     class ExactLexeme(val content: String, val desc: String = content): TerminalLexeme() {
         override fun token(code: Code): Token? {
@@ -1556,8 +1600,8 @@ class Compiler {
         }
     }
 }
-typealias Optional = Array<Compiler.Product>
-typealias Column = AppendableSet<Compiler.State>
+typealias Optional = Array<Parser.Product>
+typealias Column = AppendableSet<Parser.State>
 
 class AppendableSet<T>: MutableSet<T> {
     val set = mutableSetOf<T>()
