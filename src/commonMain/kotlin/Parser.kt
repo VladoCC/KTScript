@@ -903,39 +903,58 @@ fun parser(init: Parser.() -> Unit): Parser {
     }
 }
 
-class StringLexeme(val string: String): Parser.TerminalLexeme() {
-    override fun token(code: Code): Parser.Token? {
-        var str = ""
-        if (code.current.startsWith("\"\"\"")) {
-            str += "\"\"\""
-        } else if (code.current.startsWith("\"")) {
-            val strContent = code.current.drop(1).dropWhile { it == '"' }
+class StringLexeme(val string: String, expressionGrammar: Grammar,
+                   identBasic: Parser.TerminalLexeme,
+                   identStr: Parser.TerminalLexeme): Parser.TerminalLexeme() {
+    private val expressionMatcher = ExpressionMatcher(expressionGrammar)
+    private val identBasicMatcher = TerminalMatcher(identBasic)
+    private val identStrMatcher = TerminalMatcher(identStr)
 
-            str += "\""
+    override fun token(code: Code): StringToken? {
+        var str = ""
+        val matchers: Array<Matcher>
+        val elements = mutableListOf<Element>()
+        if (code.current.startsWith("\"\"\"")) {
+            matchers = arrayOf(expressionMatcher, identBasicMatcher, identStrMatcher)
+        } else if (code.current.startsWith("\"")) {
+            matchers = arrayOf(expressionMatcher, identBasicMatcher, identStrMatcher)
+        } else {
+            return null
         }
-        return Parser.Token(str, code.position, setOf("string"), code.consumed)
+        return StringToken(str, code.position, setOf("string"), code.consumed, elements)
     }
 
     override fun match(token: Parser.Token) = token.tags.contains("string")
 
+    class StringToken(content: String, position: Position, tags: Set<String>, index: Int, elements: List<Element>):
+        Parser.Token(content, position, tags, index)
+
     interface Matcher {
-        fun match(input: String): Result?
+        fun match(input: String): Element?
     }
 
     class RegexMatcher(private val regex: Regex): Matcher {
-        override fun match(input: String): Result? {
-            return regex.find(input)?.let { if (it.range.first == 0) TextResult(it.value) else null }
+        override fun match(input: String): Element? {
+            return regex.find(input)?.let { if (it.range.first == 0) TextElement(it.value) else null }
         }
     }
 
-    class IdentifierMatcher(): Matcher {
-        override fun match(input: String): ParsableResult? {
-            TODO("Not yet implemented")
+    class TerminalMatcher(private val term: Parser.TerminalLexeme): Matcher {
+        override fun match(input: String): ParsableElement? {
+            return term.token(Code(input))?.let {
+                if (it.content == input) {
+                    ParsableElement(Parser.AST(term, null, 0, it))
+                } else {
+                    null
+                }
+            }
         }
     }
 
-    class ExpressionMatcher(private val parser: Parser): Matcher {
-        override fun match(input: String): ParsableResult? {
+    class ExpressionMatcher(grammar: Grammar): Matcher {
+        private val parser = Parser(grammar)
+
+        override fun match(input: String): ParsableElement? {
             if (!input.startsWith("\${")) {
                 return null
             }
@@ -948,13 +967,13 @@ class StringLexeme(val string: String): Parser.TerminalLexeme() {
                 }
                 counter > 0 ||it != '}'
             }.drop(2)
-            return parser.process(exp)?.let { ParsableResult(it) }
+            return parser.process(exp)?.let { ParsableElement(it) }
         }
     }
 
-    sealed interface Result
-    class TextResult(val text: String): Result
-    class ParsableResult(tree: Parser.AST): Result {
+    sealed interface Element
+    class TextElement(val text: String): Element
+    class ParsableElement(tree: Parser.AST): Element {
         fun produce(): String {
             TODO()
         }
@@ -962,8 +981,7 @@ class StringLexeme(val string: String): Parser.TerminalLexeme() {
 }
 
 // TODO rename correctly
-class Parser {
-    private val grammar = mutableListOf<Rule>()
+class Parser(private val grammar: Grammar = mutableListOf()) {
 
     private lateinit var table: Table
     private val terminals = mutableListOf<TerminalLexeme>()
@@ -1600,6 +1618,8 @@ class Parser {
         }
     }
 }
+
+typealias Grammar = MutableList<Parser.Rule>
 typealias Optional = Array<Parser.Product>
 typealias Column = AppendableSet<Parser.State>
 
