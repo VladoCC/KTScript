@@ -169,7 +169,6 @@ fun compile(code: String, task: Task) {
         val unsignedLiteral = nonTerm("unsignedLiteral")
         val numberLiteral = nonTerm("numberLiteral")
 
-        val lineStringLiteral = registerTerm()
         val lineStringElement = nonTerm("lineStringElement")
         val lineStringContent = nonTerm("lineStringContent")
         val multiLineStringLiteral = nonTerm("multiLineStringLiteral")
@@ -329,6 +328,7 @@ fun compile(code: String, task: Task) {
 
         val chainIdent = nonTerm("chainIdent")
         val ident = nonTerm("identifier")
+        val lineStringLiteral = registerTerm(StringLexeme(subgrammar(expression), identBasic, identStr))
 
 
         rule(root, file)
@@ -431,11 +431,11 @@ fun compile(code: String, task: Task) {
             optional(visibilityModifier)
                     + setTerm
                     + optional(leftBracket
-                        + functionValueParameterWithOptionalType
-                        + rightBracket
-                        + optional(colon + type)
-                        + functionBody
-                    )
+                    + functionValueParameterWithOptionalType
+                    + rightBracket
+                    + optional(colon + type)
+                    + functionBody
+            )
         )
         rule(functionValueParameterWithOptionalType, zeroOrMore(parameterModifier)
                 + parameterWithOptionalType
@@ -762,7 +762,7 @@ fun compile(code: String, task: Task) {
                 functionValueParameter
                         + zeroOrMore(comma + functionValueParameter)
                         + optional(comma)
-                    )
+            )
                     + rightBracket
         )
         rule(functionValueParameter, zeroOrMore(parameterModifier)
@@ -903,7 +903,7 @@ fun parser(init: Parser.() -> Unit): Parser {
     }
 }
 
-class StringLexeme(val string: String, expressionGrammar: Grammar,
+class StringLexeme(expressionGrammar: Grammar,
                    identBasic: Parser.TerminalLexeme,
                    identStr: Parser.TerminalLexeme): Parser.TerminalLexeme() {
     private val expressionMatcher = ExpressionMatcher(expressionGrammar)
@@ -911,17 +911,42 @@ class StringLexeme(val string: String, expressionGrammar: Grammar,
     private val identStrMatcher = TerminalMatcher(identStr)
 
     override fun token(code: Code): StringToken? {
-        var str = ""
         val matchers: Array<Matcher>
+        val stopAt: String
         val elements = mutableListOf<Element>()
         if (code.current.startsWith("\"\"\"")) {
-            matchers = arrayOf(expressionMatcher, identBasicMatcher, identStrMatcher)
+            matchers = arrayOf(
+                expressionMatcher,
+                identBasicMatcher,
+                identStrMatcher,
+                RegexMatcher(Regex("\\\\(t|b|r|n|'|\"|\\\\)")),
+                RegexMatcher(Regex("\\\\(u[0-9A-Fa-f]{4})")),
+                RegexMatcher(Regex("""[^\\"]+""")),
+            )
+            stopAt = "\""
         } else if (code.current.startsWith("\"")) {
-            matchers = arrayOf(expressionMatcher, identBasicMatcher, identStrMatcher)
+            matchers = arrayOf(
+                expressionMatcher,
+                identBasicMatcher,
+                identStrMatcher,
+                RegexMatcher(Regex("""[^\\]+""")),
+            )
+            stopAt = "\"\"\""
         } else {
             return null
         }
-        return StringToken(str, code.position, setOf("string"), code.consumed, elements)
+        while (!code.current.startsWith(stopAt)) {
+            matchers.forEach { matcher ->
+                val result = matcher.match(code.current)
+                if (result != null){
+                    code.consume(result.content)
+                    return@forEach
+                }
+            }
+        }
+        code.consume(stopAt)
+        val content = elements.joinToString { it.content }
+        return StringToken(content, code.position, setOf("string"), code.consumed, elements)
     }
 
     override fun match(token: Parser.Token) = token.tags.contains("string")
@@ -941,13 +966,19 @@ class StringLexeme(val string: String, expressionGrammar: Grammar,
 
     class TerminalMatcher(private val term: Parser.TerminalLexeme): Matcher {
         override fun match(input: String): ParsableElement? {
-            return term.token(Code(input))?.let {
-                if (it.content == input) {
-                    ParsableElement(Parser.AST(term, null, 0, it))
-                } else {
-                    null
+            return input.let { if (it[0] == '$') it.drop(1) else null }
+                ?.let {
+                    term.token(Code(input))?.let {
+                        if (it.content.startsWith(input)) {
+                            ParsableElement(
+                                Parser.AST(term, null, 0, it),
+                                "$" + it.content
+                            )
+                        } else {
+                            null
+                        }
+                    }
                 }
-            }
         }
     }
 
@@ -965,15 +996,18 @@ class StringLexeme(val string: String, expressionGrammar: Grammar,
                 } else if (it == '}') {
                     counter--
                 }
-                counter > 0 ||it != '}'
+                counter > 0 || it != '}'
             }.drop(2)
-            return parser.process(exp)?.let { ParsableElement(it) }
+            return parser.process(exp)?.let { ParsableElement(it, "\${$exp}") }
         }
     }
 
-    sealed interface Element
-    class TextElement(val text: String): Element
-    class ParsableElement(tree: Parser.AST): Element {
+    sealed interface Element {
+        val content: String
+    }
+    class TextElement(override val content: String): Element
+    class ParsableElement(tree: Parser.AST, override val content: String): Element {
+
         fun produce(): String {
             TODO()
         }
@@ -1004,6 +1038,10 @@ class Parser(private val grammar: Grammar = mutableListOf()) {
             return parse(tokens)?.dotGraph()?: ""
         }
         return ""
+    }
+
+    fun subgrammar(root: Lexeme): Grammar {
+
     }
 
     private fun tokenize(code: Code): List<Token> {
@@ -1151,17 +1189,17 @@ class Parser(private val grammar: Grammar = mutableListOf()) {
     }
 
     fun nonTerm(desc: String = "") = Lexeme(desc)
-    fun term(content: String, desc: String? = null): Lexeme {
+    fun term(content: String, desc: String? = null): TerminalLexeme {
         val token = ExactLexeme(content, desc?: content)
         terminals.add(token)
         return token
     }
-    fun regTerm(regex: Regex, name: String): Lexeme {
+    fun regTerm(regex: Regex, name: String): TerminalLexeme {
         val token = RegexLexeme(regex, name)
         terminals.add(token)
         return token
     }
-    fun regTerm(regex: String, name: String): Lexeme = regTerm(Regex(regex), name)
+    fun regTerm(regex: String, name: String): TerminalLexeme = regTerm(Regex(regex), name)
     fun customTerm(token: (Code) -> Token?, match: (Token) -> Boolean): CustomLexeme {
         val lex = CustomLexeme(token, match)
         terminals.add(lex)
