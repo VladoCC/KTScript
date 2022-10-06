@@ -154,7 +154,6 @@ fun compile(code: String, task: Task) {
 
         val parenthesizedExpression = nonTerm("parenthesizedExpression")
         val literalConstant = nonTerm("literalConstant")
-        val stringLiteral = nonTerm("stringLiteral")
         val callableReference = nonTerm("callableReference")
         val objectLiteral = nonTerm("objectLiteral")
         val collectionLiteral = nonTerm("collectionLiteral")
@@ -169,13 +168,6 @@ fun compile(code: String, task: Task) {
         val unsignedLiteral = nonTerm("unsignedLiteral")
         val numberLiteral = nonTerm("numberLiteral")
 
-        val lineStringElement = nonTerm("lineStringElement")
-        val lineStringContent = nonTerm("lineStringContent")
-        val multiLineStringLiteral = nonTerm("multiLineStringLiteral")
-        val multiLineStringElement = nonTerm("multiLineStringElement")
-        val multiLineStringContent = nonTerm("multiLineStringContent")
-        val lineStrRef = nonTerm("lineStrRef")
-        val stringExpression = nonTerm("stringExpression")
         val delegationSpecifiers = nonTerm("delegationSpecifiers")
         val annotatedDelegationSpecifier = nonTerm("annotatedDelegationSpecifier")
         val delegationSpecifier = nonTerm("delegationSpecifier")
@@ -200,10 +192,10 @@ fun compile(code: String, task: Task) {
         val characterTerm = regTerm("'((\\\\((u[0-9A-Fa-f]{4})|t|b|r|n|\'|\"|\\|\$))|([^\\n]|[^\\r]|[^\\\\]|[^\']))'","character")
         val longMarker = regTerm("[lL]", "longMarker")
         val unsignedMarker = regTerm("[uU]", "unsignedMarker")
-        val lineStrEscapedChar = regTerm(Regex("((\\\\((u[0-9A-Fa-f]{4})|t|b|r|n|'|\"|\\|\$)))"), "escapedIdentifier")
+        /*val lineStrEscapedChar = regTerm(Regex("((\\\\((u[0-9A-Fa-f]{4})|t|b|r|n|'|\"|\\|\$)))"), "escapedIdentifier")*/
         val identStr = regTerm("`[^\\r\\n`]+`", "identStr")
-        val lineStrText = regTerm("[^\\\"\$]+|\$", "lineStrText")
-        val multiLineStrText = regTerm("[^\"\$]+|\$", "multiLineStrText")
+        /*val lineStrText = regTerm("[^\\\"\$]+|\$", "lineStrText")
+        val multiLineStrText = regTerm("[^\"\$]+|\$", "multiLineStrText")*/
 
         val declarationKeyword = nonTerm("declarationKeyword")
 
@@ -328,7 +320,11 @@ fun compile(code: String, task: Task) {
 
         val chainIdent = nonTerm("chainIdent")
         val ident = nonTerm("identifier")
-        val lineStringLiteral = registerTerm(StringLexeme(subgrammar(expression), identBasic, identStr))
+        val stringLiteral = registerTerm(StringLexeme(
+            Parser(subgrammar(expression), expression),
+            identBasic,
+            identStr)
+        )
 
 
         rule(root, file)
@@ -340,7 +336,7 @@ fun compile(code: String, task: Task) {
 
         rule(packageHeader, packageTerm + chainIdent + semi)
         rule(importHeader, import + chainIdent + optional(importEnding) + semi)
-        rule(topLevelObject, declaration + semis)
+        rule(topLevelObject, declaration + optional(semis))
         rule(declaration, classDeclaration or objectDeclaration or
                 funDeclaration or propertyDeclaration or typeAlias)
 
@@ -547,7 +543,6 @@ fun compile(code: String, task: Task) {
                 or longLiteral
                 or unsignedLiteral
         )
-        rule(stringLiteral, lineStringLiteral or multiLineStringLiteral)
         rule(callableReference, optional(receiverType) + doubleColon + ident
                 or optional(receiverType) + doubleColon + classTerm
         )
@@ -616,11 +611,6 @@ fun compile(code: String, task: Task) {
         rule(longLiteral, numberLiteral + longMarker)
         rule(unsignedLiteral, numberLiteral + unsignedMarker + optional(longMarker))
         rule(numberLiteral, integerTerm or hexTerm or binTerm)
-        rule(lineStringLiteral, quotation + zeroOrMore(lineStringElement) + quotation)
-        rule(multiLineStringLiteral, tripleQuotation
-                + zeroOrMore(multiLineStringElement)
-                + tripleQuotation
-        )
         rule(delegationSpecifiers, annotatedDelegationSpecifier
                 + zeroOrMore(comma + annotatedDelegationSpecifier)
         )
@@ -633,13 +623,6 @@ fun compile(code: String, task: Task) {
         rule(explicitDelegation, userType + byTerm + expression
                 or functionType + byTerm + expression
         )
-
-        rule(lineStringElement, stringExpression or lineStringContent)
-        rule(multiLineStringElement, stringExpression or quotation or multiLineStringContent)
-        rule(lineStringContent, lineStrRef or lineStrText or lineStrEscapedChar)
-        rule(multiLineStringContent, lineStrRef or multiLineStrText or quotation)
-        rule(lineStrRef, dollar + ident)
-        rule(stringExpression, dollar + leftCurlyBracket + expression + rightCurlyBracket)
 
         rule(equalityOperator, equal or notEqual or exactEqual or exactNotEqual)
         rule(comparisonOperator, less or more or lessOrEquals or moreOrEquals)
@@ -831,7 +814,7 @@ fun compile(code: String, task: Task) {
         rule(ident, identBasic or identStr)
         rule(semi, semiInternal + optional(newline))
         rule(semis, oneOrMore(semiInternal))
-        rule(semiInternal, newline or semicolon)
+        rule(semiInternal, newline or semicolon or eofTerm)
     }
     when (task) {
         Task.COMPILE -> parser.process(code)
@@ -903,10 +886,10 @@ fun parser(init: Parser.() -> Unit): Parser {
     }
 }
 
-class StringLexeme(expressionGrammar: Grammar,
+class StringLexeme(expressionParser: Parser,
                    identBasic: Parser.TerminalLexeme,
-                   identStr: Parser.TerminalLexeme): Parser.TerminalLexeme() {
-    private val expressionMatcher = ExpressionMatcher(expressionGrammar)
+                   identStr: Parser.TerminalLexeme): Parser.TerminalLexeme("string") {
+    private val expressionMatcher = ExpressionMatcher(expressionParser)
     private val identBasicMatcher = TerminalMatcher(identBasic)
     private val identStrMatcher = TerminalMatcher(identStr)
 
@@ -982,8 +965,10 @@ class StringLexeme(expressionGrammar: Grammar,
         }
     }
 
-    class ExpressionMatcher(grammar: Grammar): Matcher {
-        private val parser = Parser(grammar)
+    class ExpressionMatcher(private val parser: Parser): Matcher {
+        init {
+            parser.root
+        }
 
         override fun match(input: String): ParsableElement? {
             if (!input.startsWith("\${")) {
@@ -1015,14 +1000,20 @@ class StringLexeme(expressionGrammar: Grammar,
 }
 
 // TODO rename correctly
-class Parser(private val grammar: Grammar = mutableListOf()) {
+class Parser(parseGrammar: Grammar, val root: Lexeme) {
+    private val grammar = parseGrammar.toMutableList()
 
     private lateinit var table: Table
     private val terminals = mutableListOf<TerminalLexeme>()
-    private val forest = mutableMapOf<State, Tree<State>>()
+    private val forest = mutableMapOf<Pair<State, Int>, Tree<State>>()
 
-    val root = nonTerm()
     val newline = regTerm("\\n\\s*", "newline")
+    val eofTerm = object: TerminalLexeme("EOF") {
+        override fun token(code: Code) = null
+        override fun match(token: Token) = token.tags.contains("EOF")
+    }
+
+    constructor() : this(emptyList(), Lexeme())
 
     fun process(code: String): AST? {
         val tokens = tokenize(Code(code))
@@ -1041,7 +1032,32 @@ class Parser(private val grammar: Grammar = mutableListOf()) {
     }
 
     fun subgrammar(root: Lexeme): Grammar {
-
+        val ruleSet = mutableMapOf<Lexeme, MutableList<Rule>>()
+        grammar.forEach {
+            if (!ruleSet.containsKey(it.left)) {
+                ruleSet[it.left] = mutableListOf()
+            }
+            ruleSet[it.left]!!.add(it)
+        }
+        val current = mutableListOf<Lexeme>()
+        current.add(root)
+        val result = mutableMapOf<Lexeme, List<Rule>>()
+        while (current.isNotEmpty()) {
+            val left = current[0]
+            ruleSet[left]?.let { rules ->
+                result[left] = rules
+                rules.forEach {rule ->
+                    rule.right.forEach {
+                        // TODO it !in current is O(N) and can be optimized
+                        if (it !in result && it !in current) {
+                            current.add(it)
+                        }
+                    }
+                }
+            }
+            current.removeAt(0)
+        }
+        return result.values.flatten()
     }
 
     private fun tokenize(code: Code): List<Token> {
@@ -1056,6 +1072,7 @@ class Parser(private val grammar: Grammar = mutableListOf()) {
                     code.consume(token.content)
                     code.consumeSpaces()
                     tokens.add(token)
+                    println("Created token `${token.content}` for $lex")
                     found = true
                     break
                 }
@@ -1072,6 +1089,7 @@ class Parser(private val grammar: Grammar = mutableListOf()) {
                 unexpectedPosition = null
             }
         }
+        tokens.add(Token("", code.position,  setOf("EOF"), code.consumed, "EOF"))
         return if (error) emptyList() else tokens
     }
 
@@ -1104,7 +1122,7 @@ class Parser(private val grammar: Grammar = mutableListOf()) {
             if (state == null) {
                 return null
             }
-            val tree = forest[state]
+            val tree = forest[state to tokens.size]
             val ast = tree?.toAST(tokens.toMutableList())
             ast?.print()
             return ast
@@ -1115,8 +1133,10 @@ class Parser(private val grammar: Grammar = mutableListOf()) {
         return AST(value.rule.left, parent, children.size).also {
             children.forEachIndexed { index, tree ->
                 it.children[index] = if (tree == null) {
-                    val leaf = AST(value.rule.right[index], it, 0, tokens.first())
-                    tokens.removeAt(0)
+                    val leaf = AST(value.rule.right[index], it, 0, tokens.firstOrNull())
+                    if (tokens.isNotEmpty()) {
+                        tokens.removeAt(0)
+                    }
                     leaf
                 } else {
                     tree.toAST(tokens, it)
@@ -1136,11 +1156,12 @@ class Parser(private val grammar: Grammar = mutableListOf()) {
         }.forEach { pair ->
             val (index, it) = pair
             val new = it.copy(dot = it.dot + 1, parent = it)
-            println("Complete[$col][${table[col].size}] from [${table[col].indexOf(state)}] and state[${state.origin}][$index]")
-            println(new)
+            println("Complete[$col][${table[col].size}]\n" +
+                    "  From [${table[col].indexOf(state)}] ${state.rule}\n" +
+                    "  And state[${state.origin}][$index] ${it.rule}")
             table[col].add(new)
-            val child = tree(state)
-            tree(new).children[it.dot] = child
+            val child = tree(state, col)
+            tree(new, col).children[it.dot] = child
         }
     }
     private fun scanner(state: State, col: Int, token: Token) {
@@ -1149,13 +1170,14 @@ class Parser(private val grammar: Grammar = mutableListOf()) {
             throw IllegalArgumentException()
         }
         val result = next.match(token)
-        println("Match: $next, res: $result")
+        println("Match ${token.content} to $next, res: $result")
         if (result && col + 1 < table.size) {
             val new = state.copy(dot = state.dot + 1)
-            println("Scan[${col + 1}][${table[col+1].size}] from state[$col][${table[col].indexOf(state)}]")
+            println("Scan[${col + 1}][${table[col+1].size}]\n" +
+                    "  From state[$col][${table[col].indexOf(state)}] ${state.rule}")
             println(new)
             table[col + 1].add(new)
-            tree(new)
+            tree(new, col + 1)
         }
     }
     private fun predictor(state: State, col: Int) {
@@ -1164,26 +1186,29 @@ class Parser(private val grammar: Grammar = mutableListOf()) {
             .forEach { pair ->
                 val (index, it) = pair
                 val new = State(it, col)
-                println("Predicted[$col][${table[col].size}] from [$index]")
+                println("Predicted[$col][${table[col].size}]\n" +
+                        "  For [${table[col].indexOf(state)}] ${state.rule}\n" +
+                        "  From [$index] $it")
                 println(new)
                 table[col].add(new)
             }
     }
-    private fun tree(state: State): Tree<State> {
-        val prev = state.copy(dot = state.dot - 1)
-        return if (forest.containsKey(state)) {
-            forest[state]!!
+    private fun tree(state: State, token: Int): Tree<State> {
+        val key = state to token
+        val prev = state.copy(dot = state.dot - 1) to token - 1
+        return if (forest.containsKey(key)) {
+            forest[key]!!
         } else if (forest.containsKey(prev)) {
             val prevTree = forest[prev]!!
             val new = Tree(state, state.rule.right.size)
             prevTree.children.forEachIndexed { index, tree ->
                 new.children[index] = tree
             }
-            forest[state] = new
+            forest[key] = new
             new
         } else {
             val tree = Tree(state, state.rule.right.size)
-            forest[state] = tree
+            forest[key] = tree
             tree
         }
     }
@@ -1210,13 +1235,17 @@ class Parser(private val grammar: Grammar = mutableListOf()) {
     fun optional(product: Product): Optional = arrayOf(product)
     fun optional(lexeme: Lexeme): Optional = optional(Product(lexeme))
     fun oneOrMore(product: Product): Lexeme {
-        val list = nonTerm("oneOrMore")
+        val tokens = product.getTokens()
+        val name = "(${tokens.joinToString(" ") { it.desc }})+"
+        val list = nonTerm(name)
         rule(list, product + optional(list))
         return list
     }
     fun oneOrMore(lexeme: Lexeme) = oneOrMore(Product(lexeme))
     fun oneOrMore(product: OptionalProduct): Lexeme {
-        val list = nonTerm("oneOrMoreOptional")
+        val prods = product.produce().map { it.getTokens() }.joinToString(" | ") { it.joinToString(" ") { it.desc } }
+        val name = "(${prods})+"
+        val list = nonTerm(name)
         product.produce().forEach {
             rule(list, it + optional(list))
         }
@@ -1237,7 +1266,7 @@ class Parser(private val grammar: Grammar = mutableListOf()) {
         return rule(left, Product(right)).first()
     }
 
-    open class Lexeme(private val desc: String = ""): Comparable<Lexeme> {
+    open class Lexeme(val desc: String = ""): Comparable<Lexeme> {
         protected val id = getCount()
 
         operator fun plus(lexeme: Lexeme): Product {
@@ -1277,11 +1306,11 @@ class Parser(private val grammar: Grammar = mutableListOf()) {
         }
 
     }
-    abstract class TerminalLexeme: Lexeme() {
+    abstract class TerminalLexeme(desc: String): Lexeme(desc) {
         abstract fun token(code: Code): Token?
         abstract fun match(token: Token): Boolean
     }
-    class ExactLexeme(val content: String, val desc: String = content): TerminalLexeme() {
+    class ExactLexeme(val content: String, desc: String = content): TerminalLexeme(desc) {
         override fun token(code: Code): Token? {
             return if (code.current.startsWith(content)) {
                 Token(content, code.position, emptySet(), code.consumed, desc)
@@ -1298,7 +1327,7 @@ class Parser(private val grammar: Grammar = mutableListOf()) {
             return "ExactLexeme(content='$desc', id='$id')"
         }
     }
-    class RegexLexeme(private val regex: Regex, private val name: String): TerminalLexeme() {
+    class RegexLexeme(private val regex: Regex, private val name: String): TerminalLexeme(name) {
         override fun token(code: Code): Token? {
             val result = regex.find(code.current)
             if (result == null || result.range.first != 0) {
@@ -1312,11 +1341,11 @@ class Parser(private val grammar: Grammar = mutableListOf()) {
         }
 
         override fun toString(): String {
-            return "RegexLexeme(regex='$regex', id='$id')"
+            return "RegexLexeme(regex='$regex', id='$id', name='$name')"
         }
     }
     class CustomLexeme(val tokenLambda: (Code) -> Token?,
-                       val matchLambda: (Token) -> Boolean): TerminalLexeme() {
+                       val matchLambda: (Token) -> Boolean): TerminalLexeme("custom") {
         override fun token(code: Code): Token? = tokenLambda(code)
         override fun match(token: Token): Boolean = matchLambda(token)
     }
@@ -1657,7 +1686,7 @@ class Parser(private val grammar: Grammar = mutableListOf()) {
     }
 }
 
-typealias Grammar = MutableList<Parser.Rule>
+typealias Grammar = List<Parser.Rule>
 typealias Optional = Array<Parser.Product>
 typealias Column = AppendableSet<Parser.State>
 
