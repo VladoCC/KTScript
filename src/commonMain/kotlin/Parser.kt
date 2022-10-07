@@ -1005,7 +1005,7 @@ class Parser(parseGrammar: Grammar, val root: Lexeme) {
 
     private lateinit var table: Table
     private val terminals = mutableListOf<TerminalLexeme>()
-    private val forest = mutableMapOf<Pair<State, Int>, Tree<State>>()
+    private val forest = mutableMapOf<State, MutableList<Pair<Tree<State>, Int>>>()
 
     val newline = regTerm("\\n\\s*", "newline")
     val eofTerm = object: TerminalLexeme("EOF") {
@@ -1122,7 +1122,7 @@ class Parser(parseGrammar: Grammar, val root: Lexeme) {
             if (state == null) {
                 return null
             }
-            val tree = forest[state to tokens.size]
+            val tree = forest[state]?.last()?.first
             val ast = tree?.toAST(tokens.toMutableList())
             ast?.print()
             return ast
@@ -1161,7 +1161,14 @@ class Parser(parseGrammar: Grammar, val root: Lexeme) {
                     "  And state[${state.origin}][$index] ${it.rule}")
             table[col].add(new)
             val child = tree(state, col)
-            tree(new, col).children[it.dot] = child
+            val pair = tree(new, col)
+            val parent = if (child.second > pair.second) {
+                forest[pair.first.value].apair.first.copy() to child.second
+            }
+            else {
+                pair.first
+            }
+            parent.children[it.dot] = child.first
         }
     }
     private fun scanner(state: State, col: Int, token: Token) {
@@ -1193,23 +1200,26 @@ class Parser(parseGrammar: Grammar, val root: Lexeme) {
                 table[col].add(new)
             }
     }
-    private fun tree(state: State, token: Int): Tree<State> {
-        val key = state to token
-        val prev = state.copy(dot = state.dot - 1) to token - 1
-        return if (forest.containsKey(key)) {
-            forest[key]!!
-        } else if (forest.containsKey(prev)) {
-            val prevTree = forest[prev]!!
+    private fun findTrees(state: State, token: Int): List<Pair<Tree<State>, Int>> {
+        if (!forest.containsKey(state)) {
+            forest[state] = mutableListOf()
+        }
+
+        val prevState = state.copy(dot = state.dot - 1)
+        return if (forest.containsKey(prevState)) {
+            val prev = forest[prevState]!!.filter { it.second < token }.first()
+
             val new = Tree(state, state.rule.right.size)
-            prevTree.children.forEachIndexed { index, tree ->
+            prevPair.first.children.forEachIndexed { index, tree ->
                 new.children[index] = tree
             }
-            forest[key] = new
-            new
+            val newPair = new to prevPair.second
+            forest[state]!!.add(newPair)
+            newPair
         } else {
-            val tree = Tree(state, state.rule.right.size)
-            forest[key] = tree
-            tree
+            val pair = Tree(state, state.rule.right.size) to token
+            forest[state]!!.add(pair)
+            forest[state]!!
         }
     }
 
@@ -1582,10 +1592,18 @@ class Parser(parseGrammar: Grammar, val root: Lexeme) {
             return TreeIterator(this, order)
         }
 
+        fun copy(): Tree<T> {
+            return Tree(value, children.size).also {
+                it.children.indices.forEach { index ->
+                    it.children[index] = children[index]
+                }
+            }
+        }
+
         enum class Order {
             BreadthFirst, DepthFirst
         }
-        private class TreeIterator<T>(private var tree: Tree<T>, private val order: Order): Iterator<T> {
+        private class TreeIterator<T>(private val tree: Tree<T>, private val order: Order): Iterator<T> {
             val nodeList = mutableListOf<T>()
             val listIterator: Iterator<T>
 
