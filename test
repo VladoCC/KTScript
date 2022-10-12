@@ -1,1 +1,1 @@
-val a: Int;
+val a = """"$left" -> "${token} (${tree.token.index})";"""
