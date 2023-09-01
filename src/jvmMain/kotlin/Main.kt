@@ -1,5 +1,5 @@
 import java.io.File
 
 fun main() {
-    compile(File("test").readText(), Task.COMPILE)
+    run(File("test").readText(), Task.COMPILE)
 }

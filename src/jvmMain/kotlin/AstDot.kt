@@ -1,6 +1,5 @@
-import com.lordcodes.turtle.shellRun
 import java.io.File
 
 fun main() {
-    compile(File("test").readText(), Task.AST_DOT)
+    run(File("test").readText(), Task.AST_DOT)
 }

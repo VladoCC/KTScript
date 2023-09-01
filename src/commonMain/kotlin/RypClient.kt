@@ -1,11 +1,13 @@
-import Grammar.*
+import language.Language
+import language.TerminalLexeme
+import language.Token
 
-enum class Task {
-    COMPILE, AST_DOT
+fun run(code: String, task: Task) {
+    compile(code, task, cryptParser())
 }
 
-fun compile(code: String, task: Task) {
-    val parser = parser {
+fun cryptParser(): Compiler {
+    return parser {
         val file = nonTerm("file")
         val packageHeader = nonTerm("packageHeader")
         val importHeader = nonTerm("importHeader")
@@ -199,81 +201,85 @@ fun compile(code: String, task: Task) {
 
         val declarationKeyword = nonTerm("declarationKeyword")
 
-        val stringLiteral = registerTerm(StringLexeme(
-            subgrammar(expression),
-            identBasic,
-            identStr)
+        val stringLiteral = registerTerm(
+            StringLexeme(
+                identBasic,
+                identStr
+            ).apply {
+                addOnLanguageConstructedCallback {
+                    setExpressionLanguage(it.subgrammar(expression))
+                }
+            }
         )
 
-        val constructorTerm = term("constructor")
-        val crossinlineTerm = term("crossinline")
-        val annotationTerm = term("annotation")
-        val companionTerm = term("companion")
-        val interfaceTerm = term("interface")
-        val typealiasTerm = term("typealias")
-        val protectedTerm = term("protected")
-        val continueTerm = term("continue")
-        val overrideTerm = term("override")
-        val lateinitTerm = term("lateinit")
-        val internalTerm = term("internal")
-        val operatorTerm = term("operator")
-        val externalTerm = term("external")
-        val abstractTerm = term("abstract")
-        val noinlineTerm = term("noinline")
-        val dynamicTerm = term("dynamic")
-        val packageTerm = term("package")
-        val finallyTerm = term("finally")
-        val suspendTerm = term("suspend")
-        val privateTerm = term("private")
-        val tailrecTerm = term("tailrec")
-        val reifiedTerm = term("reified")
-        val objectTerm = term("object")
-        val returnTerm = term("return")
-        val publicTerm = term("public")
-        val import = term("import")
-        val sealedTerm = term("sealed")
-        val inlineTerm = term("inline")
-        val varargTerm = term("vararg")
-        val classTerm = term("class")
-        val falseTerm = term("false")
-        val superTerm = term("super")
-        val catchTerm = term("catch")
-        val throwTerm = term("throw")
-        val breakTerm = term("break")
-        val whileTerm = term("while")
-        val innerTerm = term("inner")
-        val infixTerm = term("infix")
-        val constTerm = term("const")
-        val finalTerm = term("final")
-        val trueTerm = term("true")
-        val fileTerm = term("file")
-        val nullTerm = term("null")
-        val thisTerm = term("this")
-        val elseTerm = term("else")
-        val whenTerm = term("when")
-        val initTerm = term("init")
-        val enumTerm = term("enum")
-        val dataTerm = term("data")
-        val openTerm = term("open")
-        val asNullableTerm = term("as?")
-        val notInTerm = term("!in")
-        val notIsTerm = term("!is")
-        val valTerm = term("val")
-        val varTerm = term("var")
-        val funTerm = term("fun")
-        val outTerm = term("out")
-        val tryTerm = term("try")
-        val forTerm = term("for")
-        val getTerm = term("get")
-        val setTerm = term("set")
-        val doTerm = term("do")
-        val asTerm = term("as")
-        val inTerm = term("in")
-        val isTerm = term("is")
-        val byTerm = term("by")
-        val ifTerm = term("if")
+        val constructorTerm = wordTerm("constructor")
+        val crossinlineTerm = wordTerm("crossinline")
+        val annotationTerm = wordTerm("annotation")
+        val companionTerm = wordTerm("companion")
+        val interfaceTerm = wordTerm("interface")
+        val typealiasTerm = wordTerm("typealias")
+        val protectedTerm = wordTerm("protected")
+        val continueTerm = wordTerm("continue")
+        val overrideTerm = wordTerm("override")
+        val lateinitTerm = wordTerm("lateinit")
+        val internalTerm = wordTerm("internal")
+        val operatorTerm = wordTerm("operator")
+        val externalTerm = wordTerm("external")
+        val abstractTerm = wordTerm("abstract")
+        val noinlineTerm = wordTerm("noinline")
+        val dynamicTerm = wordTerm("dynamic")
+        val packageTerm = wordTerm("package")
+        val finallyTerm = wordTerm("finally")
+        val suspendTerm = wordTerm("suspend")
+        val privateTerm = wordTerm("private")
+        val tailrecTerm = wordTerm("tailrec")
+        val reifiedTerm = wordTerm("reified")
+        val objectTerm = wordTerm("object")
+        val returnTerm = wordTerm("return")
+        val publicTerm = wordTerm("public")
+        val import = wordTerm("import")
+        val sealedTerm = wordTerm("sealed")
+        val inlineTerm = wordTerm("inline")
+        val varargTerm = wordTerm("vararg")
+        val classTerm = wordTerm("class")
+        val falseTerm = wordTerm("false")
+        val superTerm = wordTerm("super")
+        val catchTerm = wordTerm("catch")
+        val throwTerm = wordTerm("throw")
+        val breakTerm = wordTerm("break")
+        val whileTerm = wordTerm("while")
+        val innerTerm = wordTerm("inner")
+        val infixTerm = wordTerm("infix")
+        val constTerm = wordTerm("const")
+        val finalTerm = wordTerm("final")
+        val trueTerm = wordTerm("true")
+        val fileTerm = wordTerm("file")
+        val nullTerm = wordTerm("null")
+        val thisTerm = wordTerm("this")
+        val elseTerm = wordTerm("else")
+        val whenTerm = wordTerm("when")
+        val initTerm = wordTerm("init")
+        val enumTerm = wordTerm("enum")
+        val dataTerm = wordTerm("data")
+        val openTerm = wordTerm("open")
+        val asNullableTerm = wordTerm("as?")
+        val notInTerm = wordTerm("!in")
+        val notIsTerm = wordTerm("!is")
+        val valTerm = wordTerm("val")
+        val varTerm = wordTerm("var")
+        val funTerm = wordTerm("fun")
+        val outTerm = wordTerm("out")
+        val tryTerm = wordTerm("try")
+        val forTerm = wordTerm("for")
+        val getTerm = wordTerm("get")
+        val setTerm = wordTerm("set")
+        val doTerm = wordTerm("do")
+        val asTerm = wordTerm("as")
+        val inTerm = wordTerm("in")
+        val isTerm = wordTerm("is")
+        val byTerm = wordTerm("by")
+        val ifTerm = wordTerm("if")
 
-        val tripleQuotation = term("\"\"\"")
         val exactEqual = term("===")
         val exactNotEqual = term("!==")
 
@@ -327,7 +333,7 @@ fun compile(code: String, task: Task) {
         val chainIdent = nonTerm("chainIdent")
         val ident = nonTerm("identifier")
 
-        rule(start, file)
+        rule(root, file)
         rule(file, zeroOrMore(fileAnnotation)
                 + optional(packageHeader)
                 + zeroOrMore(importHeader)
@@ -816,86 +822,17 @@ fun compile(code: String, task: Task) {
         rule(semis, oneOrMore(semiInternal))
         rule(semiInternal, newline or semicolon or end)
     }
-    when (task) {
-        Task.COMPILE -> parser.process(code)
-        Task.AST_DOT -> {
-            save(parser.astDotString(code), "ast.dot")
-        }
-    }
-}
-data class Script(val code: Code, val tokens: TailList<Token>? = null)
-class Code private constructor(private val storage: CodeStorage, val pos: Int = 0) {
-    constructor(code: String) : this(CodeStorage(code))
-
-    fun current(): String {
-        return storage.get(pos)
-    }
-
-    fun isConsumed() = pos == storage.text.length
-
-    fun at(index: Int): Code {
-        if (index > storage.text.length || index < 0) {
-            throw IllegalArgumentException("Index $index is out of bounds")
-        }
-        return Code(storage, index)
-    }
-
-    fun move(step: Int): Code {
-        val newPos = pos + step
-        if (newPos > storage.text.length || newPos < 0) {
-            throw IllegalArgumentException("Index $newPos is out of bounds")
-        }
-        return Code(storage, newPos)
-    }
-
-    fun position(): Position {
-        return storage.pos(pos)
-    }
-
-    fun part(from: Int, to: Int): String {
-        return storage.get(from).take(to - from)
-    }
-
-    class CodeStorage(val text: String) {
-        private val storage = mutableMapOf<Int, String>(0 to text)
-        private val posMap = mutableMapOf<Int, Position>(0 to Position())
-        fun get(at: Int): String {
-            return if (storage.containsKey(at)) {
-                storage[at]!!
-            } else {
-                var i = 0
-                val res = text.drop(at)
-                storage[at] = res
-                res
-            }
-        }
-
-        fun pos(at: Int): Position {
-            return if (posMap.containsKey(at)) {
-                posMap[at]!!
-            } else {
-                val cut = text.take(at)
-                val line = cut.count { it == '\n' }
-                val col = cut.takeLastWhile { it != '\n' }.length
-                Position(at, line, col)
-            }
-        }
-    }
 }
 
-fun parser(init: Grammar.() -> Unit): Parser {
-    Grammar().let {
-        it.init()
-        return Parser(it)
-    }
-}
-
-class StringLexeme(expressionGrammar: Grammar,
-                   identBasic: TerminalLexeme,
+class StringLexeme(identBasic: TerminalLexeme,
                    identStr: TerminalLexeme): TerminalLexeme("string") {
-    private val expressionMatcher = ExpressionMatcher(expressionGrammar)
+    private val expressionMatcher = ExpressionMatcher()
     private val identBasicMatcher = TerminalMatcher(identBasic)
     private val identStrMatcher = TerminalMatcher(identStr)
+
+    fun setExpressionLanguage(language: Language) {
+        expressionMatcher.compiler = Compiler(language)
+    }
 
     override fun token(code: Code): StringToken? {
         var text = code.current()
@@ -982,7 +919,7 @@ class StringLexeme(expressionGrammar: Grammar,
                     term.token(Code(expInput))?.let {
                         if (expInput.startsWith(it.content)) {
                             ParsableElement(
-                                Parser.AST(term, null, 0, it),
+                                Compiler.AST(term, null, 0, it),
                                 "$" + it.content
                             )
                         } else {
@@ -993,8 +930,8 @@ class StringLexeme(expressionGrammar: Grammar,
         }
     }
 
-    class ExpressionMatcher(private val grammar: Grammar): Matcher {
-        var parser: Parser? = null
+    class ExpressionMatcher: Matcher {
+        var compiler: Compiler? = null
         override fun match(input: String): ParsableElement? {
             if (!input.startsWith("\${")) {
                 return null
@@ -1009,10 +946,10 @@ class StringLexeme(expressionGrammar: Grammar,
                 counter > 0 || it != '}'
             }.drop(2)
 
-            if (parser == null) {
-                parser = Parser(grammar)
+            if (compiler == null) {
+                throw RuntimeException("Unable to parse String. Expression compiler is null.")
             }
-            return parser!!.process(exp)?.let { ParsableElement(it, "\${$exp}") }
+            return compiler!!.process(exp)?.let { ParsableElement(it, "\${$exp}") }
         }
     }
 
@@ -1020,471 +957,5 @@ class StringLexeme(expressionGrammar: Grammar,
         val content: String
     }
     class TextElement(override val content: String): Element
-    class ParsableElement(val tree: Parser.AST, override val content: String): Element {
-
-        fun produce(): String {
-            TODO()
-        }
-    }
-}
-
-// TODO rename correctly
-open class Parser(val grammar: Grammar) {
-    private lateinit var table: Table
-    private val forest = mutableMapOf<State, MutableList<Pair<Tree<State>, Int>>>()
-
-    fun process(code: String): AST? {
-        return parse(Code(code))
-    }
-
-    fun astDotString(code: String): String {
-        return parse(Code(code))?.dotGraph()?: ""
-    }
-
-    fun parse(code: Code): AST? {
-        table = Table(grammar.start, code)
-        var col = 0
-        var result: State? = null
-        while (table[col].isNotEmpty()) {
-            println("Col: $col")
-            val iter = table[col].iterator()
-            while (iter.hasNext()) {
-                val state = iter.next()
-                if (state.isComplete()) {
-                    completer(state, col)
-                } else {
-                    if (state.next() is TerminalLexeme) {
-                        if (!state.script.code.isConsumed()) {
-                            scanner(state, col)
-                        }
-                    } else {
-                        predictor(state, col)
-                    }
-                }
-            }
-            result = table.last().firstOrNull {
-                it.rule.right.size == 1 && it.rule.right[0] == grammar.start && it.isComplete() && it.script.code.isConsumed()
-            }
-            col++
-        }
-        if (result != null) {
-            result.let { state ->
-                if (state == null) {
-                    return null
-                }
-                val tree = state.tree
-                val ast = tree.toAST(state.script.tokens!!.toList().toMutableList())
-                ast.print()
-                return ast
-            }
-        } else {
-            println("Unable to parse the code")
-            return null
-        }
-    }
-
-    private fun Tree<State>.toAST(tokens: MutableList<Token>, parent: AST? = null): AST {
-        return AST(value.rule.left, parent, children.size).also {
-            children.forEachIndexed { index, tree ->
-                it.children[index] = if (tree == null) {
-                    val leaf = AST(value.rule.right[index], it, 0, tokens.firstOrNull())
-                    if (tokens.isNotEmpty()) {
-                        tokens.removeAt(0)
-                    }
-                    leaf
-                } else {
-                    tree.toAST(tokens, it)
-                }
-            }
-        }
-    }
-
-    private fun completer(state: State, col: Int) {
-        if (!state.isComplete()) {
-            throw IllegalArgumentException()
-        }
-        table[state.origin].mapIndexed { index: Int, state: State ->
-            index to state
-        }.filter {
-            it.second.next()?.equals(state.rule.left)?: false
-        }.forEach { pair ->
-            val (index, it) = pair
-            val new = it.copy(dot = it.dot + 1, parent = it, script = state.script)
-            new.tree = it.tree.copy()
-            new.tree.children[it.dot] = state.tree
-            println("Complete[$col][${table[col].size}]\n" +
-                    "  From [${table[col].indexOf(state)}] ${state.rule}\n" +
-                    "  And state[${state.origin}][$index] ${it.rule}")
-            table[col].add(new)
-            new.connect(forest[state]!!.first { it.second == col }, it.dot)
-        }
-    }
-    private fun scanner(state: State, col: Int) {
-        val next = state.next()
-        if (next !is TerminalLexeme) {
-            throw IllegalArgumentException()
-        }
-
-        val script = next.test(state.script)
-        println("Scanning `${state.script.code.current().split(Regex("\\s")).first { it.isNotBlank() }}` at ${state.script.code.position()} for $next")
-        println("  Success: ${script != state.script}")
-        if (script != state.script) {
-            println("  Matched ${script.tokens!!.current.content} to $next")
-            val new = state.copy(
-                dot = state.dot + 1,
-                script = script
-            )
-            new.tree = state.tree.copy()
-            println("  Scan[${col + 1}][${table[col+1].size}]\n" +
-                    "  From state[$col][${table[col].indexOf(state)}] ${state.rule}")
-            println(new)
-            table[col + 1].add(new)
-            createTree(new, col + 1)
-        }
-    }
-    private fun predictor(state: State, col: Int) {
-        grammar.rules.mapIndexed { index, rule -> index to rule }
-            .filter { it.second.left == state.next() }
-            .forEach { pair ->
-                val (index, it) = pair
-                val new = State(it, col, state.script)
-                println("Predicted[$col][${table[col].size}]\n" +
-                        "  For [${table[col].indexOf(state)}] ${state.rule}\n" +
-                        "  From [$index] $it")
-                println(new)
-                table[col].add(new)
-            }
-    }
-    private fun State.connect(child: Pair<Tree<State>, Int>, pos: Int) {
-        val state = this
-        val prevState = state.copy(dot = state.dot - 1)
-        val parent = if (forest.containsKey(prevState)) {
-            if (!forest.containsKey(state)) {
-                forest[state] = mutableListOf()
-            }
-
-            val prev = forest[prevState]!!.first { it.second < child.second }
-            val new = Tree(state, state.rule.right.size)
-            prev.first.children.forEachIndexed { index, tree ->
-                new.children[index] = tree
-            }
-            val newPair = new to child.second
-            forest[state]!!.add(newPair)
-            new
-        } else {
-            createTree(state, child.second)
-        }
-        parent.children[pos] = child.first
-    }
-    private fun createTree(state: State, token: Int): Tree<State> {
-        if (!forest.containsKey(state)) {
-            forest[state] = mutableListOf()
-        }
-
-        val tree = Tree(state, state.rule.right.size)
-        forest[state]!!.add(tree to token)
-        return tree
-    }
-
-    class Table(root: Lexeme, code: Code) {
-        private val columns = mutableListOf<Column>()
-        init {
-            val rootCol: Column = AppendableSet()
-            val rootState = State(Rule(Lexeme(), Product(root)), 0, Script(code))
-            rootCol.add(rootState)
-            columns.add(rootCol)
-        }
-        operator fun get(index: Int): Column {
-            (0..(index - columns.size)).forEach { _ ->
-                columns.add(AppendableSet())
-            }
-            return columns[index]
-        }
-        fun last() = columns.last()
-        val indices
-        get() = columns.indices
-        val size
-        get() = columns.size
-    }
-    data class State(
-        val rule: Rule,
-        var origin: Int,
-        val script: Script,
-        var dot: Int = 0,
-        val parent: State? = null
-    ) {
-        var tree: Tree<State> = Tree(this, rule.right.size)
-
-        fun isComplete() = dot == rule.right.size
-        fun next(): Lexeme? {
-            return if (!isComplete()) rule.right[dot] else null
-        }
-        fun prev(): Lexeme? {
-            return if (dot > 0) rule.right[dot - 1] else null
-        }
-
-        override fun equals(other: Any?): Boolean {
-            if (this === other) return true
-
-            other as State
-
-            if (rule != other.rule) return false
-            if (dot != other.dot) return false
-            if (origin != other.origin) return false
-
-            return true
-        }
-
-        override fun hashCode(): Int {
-            var result = rule.hashCode()
-            result = 31 * result + dot.hashCode()
-            return result
-        }
-    }
-
-    open class Tree<T>(val value: T, size: Int): Iterable<T> {
-        val children = arrayOfNulls<Tree<T>>(size)
-        override fun iterator(): Iterator<T> {
-            return iterator(Order.DepthFirst)
-        }
-        fun iterator(order: Order): Iterator<T> {
-            return TreeIterator(this, order)
-        }
-
-        fun copy(): Tree<T> {
-            return Tree(value, children.size).also {
-                it.children.indices.forEach { index ->
-                    it.children[index] = children[index]
-                }
-            }
-        }
-
-        enum class Order {
-            BreadthFirst, DepthFirst
-        }
-        private class TreeIterator<T>(private val tree: Tree<T>, private val order: Order): Iterator<T> {
-            val nodeList = mutableListOf<T>()
-            val listIterator: Iterator<T>
-
-            init {
-                val toProcess = mutableListOf<Tree<T>>(tree)
-                while (toProcess.isNotEmpty()) {
-                    val cur = toProcess.first()
-                    toProcess.removeAt(0)
-                    nodeList.add(cur.value)
-                    cur.children.forEach {
-                        if (it == null) {
-                            return@forEach
-                        }
-                        when (order) {
-                            Order.BreadthFirst -> toProcess.add(it)
-                            Order.DepthFirst -> toProcess.add(0, it)
-                        }
-                    }
-                }
-                listIterator = nodeList.iterator()
-            }
-
-            override fun hasNext(): Boolean {
-                return listIterator.hasNext()
-            }
-
-            override fun next(): T {
-                return listIterator.next()
-            }
-        }
-    }
-
-    class AST(value: Lexeme, val parent: AST?, size: Int, val token: Token? = null): Tree<Lexeme>(value, size) {
-        fun print(depth: Int = 0) {
-            (0 until depth).forEach { print("|") }
-            print("|-")
-            println(value)
-            children.forEach {
-                if (it !is AST) {
-                    throw IllegalArgumentException("AST children must be AST too")
-                }
-                it.print(depth + 1)
-                if (it.token != null) {
-                    (0 .. depth + 1).forEach { print("|") }
-                    println("|-${it.token}")
-                }
-            }
-        }
-        fun dotGraph(): String {
-            return DotPrinter(this).print()
-        }
-
-        private class DotPrinter(private val tree: AST) {
-            private val countMap = mutableMapOf<Lexeme, Int>()
-            private val usedMap = mutableMapOf<Lexeme, Int>()
-            private val nameMap = mutableMapOf<AST, String>()
-
-            init {
-                tree.forEach {
-                    if (countMap.containsKey(it)) {
-                        countMap[it] = countMap[it]!! + 1
-                        usedMap[it] = 0
-                    } else {
-                        countMap[it] = 1
-                    }
-                }
-            }
-
-            private fun name(tree: AST): String {
-                return if (nameMap.containsKey(tree)) {
-                    nameMap[tree]!!
-                } else {
-                    val res = tree.value.toString() +
-                            if (countMap[tree.value]!! > 1) {
-                                usedMap[tree.value] = usedMap[tree.value]!! + 1
-                                " (${usedMap[tree.value]})"
-                            } else ""
-                    nameMap[tree] = res
-                    res
-                }
-            }
-
-            private fun dotConnections(tree: AST): List<String> {
-                val left = name(tree)
-                val token = tree.token.toString().replace(""""""", """""")
-                val connections = tree.children.filterNotNull().map { """"$left" -> "${name(it as AST)}";""" }.toMutableList()
-                if (tree.token != null) {
-                    connections += """"$left" -> "${token} (${tree.token.index})";"""
-                }
-                val childConnections = tree.children.flatMap { dotConnections(it as AST) }
-                return connections + childConnections
-            }
-
-            fun print(): String {
-                val connections = dotConnections(tree)
-                    .joinToString("\n    ")
-                return "digraph {\n    $connections\n}"
-            }
-        }
-    }
-}
-
-typealias Column = AppendableSet<Parser.State>
-
-class AppendableSet<T>: MutableSet<T> {
-    val set = mutableSetOf<T>()
-    private var first: Element<T>? = null
-    private var last: Element<T>? = null
-
-    fun first() = set.first()
-    fun last() = set.last()
-
-    class Element<T>(val current: T?) {
-        var next: Element<T>? = null
-    }
-
-    class AppendableIterator<T>(first: Element<T>): MutableIterator<T> {
-        var current: Element<T>
-        var prev: Element<T> = Element(null)
-
-        init {
-            current = Element(null)
-            current.next = first
-        }
-
-        override fun hasNext(): Boolean {
-            return current.next != null
-        }
-
-        override fun next(): T {
-            val next = current.next
-            if (next?.current == null) {
-                throw NoSuchElementException()
-            }
-            prev = current
-            current = next
-            return next.current
-        }
-
-        override fun remove() {
-            val next = current.next
-            prev.next = next
-            current = prev
-        }
-    }
-
-    override fun add(element: T): Boolean {
-        val res = set.add(element)
-        if (res) {
-            addElem(element)
-        }
-        return res
-    }
-
-    private fun addElem(element: T) {
-        val elem = Element(element)
-        if (first == null) {
-            first = elem
-        }
-        if (last != null) {
-            last!!.next = elem
-        }
-        last = elem
-    }
-
-    override fun addAll(elements: Collection<T>): Boolean {
-        val res = set.addAll(elements)
-        if (res) {
-            elements.forEach { addElem(it) }
-        }
-        return res
-    }
-
-    override val size: Int
-        get() = set.size
-
-    override fun clear() {
-        set.clear()
-    }
-
-    override fun isEmpty(): Boolean {
-        return set.isEmpty()
-    }
-
-    override fun containsAll(elements: Collection<T>): Boolean {
-        return set.containsAll(elements)
-    }
-
-    override fun contains(element: T): Boolean {
-        return set.contains(element)
-    }
-
-    override fun iterator(): MutableIterator<T> {
-        return AppendableIterator(first?: Element(null))
-    }
-
-    override fun retainAll(elements: Collection<T>): Boolean {
-        return set.retainAll(elements.toSet())
-    }
-
-    override fun removeAll(elements: Collection<T>): Boolean {
-        return set.removeAll(elements.toSet())
-    }
-
-    override fun remove(element: T): Boolean {
-        return set.remove(element)
-    }
-}
-
-data class Position(val index: Int = 0, val line: Int = 0, val column: Int = 0): Comparable<Position> {
-    override fun compareTo(other: Position): Int {
-        val lineDiff = line - other.line
-        return if (lineDiff == 0) column - other.column else lineDiff
-    }
-
-    override fun toString(): String {
-        return "(${line + 1}:${column + 1})"
-    }
-
-}
-
-var counter = 0
-fun getCount(): Int {
-    return counter++
+    class ParsableElement(val tree: Compiler.AST, override val content: String): Element
 }

@@ -1,5 +1,5 @@
 plugins {
-    kotlin("multiplatform") version "1.7.10"
+    kotlin("multiplatform") version "1.9.10"
 }
 
 group = "ktscript.compiler"
@@ -19,10 +19,11 @@ kotlin {
             useJUnitPlatform()
         }
     }
-    js(BOTH) {
+    js(IR) {
+        binaries.executable()
         browser {
             commonWebpackConfig {
-                cssSupport.enabled = true
+                //cssSupport.enabled = true
             }
         }
     }
@@ -40,7 +41,6 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.3.2")
-                implementation("com.lordcodes.turtle:turtle:0.7.0")
             }
         }
         val commonTest by getting {
