@@ -1,4 +1,5 @@
 import language.Language
+import language.RegexLexeme
 import language.TerminalLexeme
 import language.Token
 
@@ -8,6 +9,8 @@ fun run(code: String, task: Task) {
 
 fun cryptParser(): Compiler {
     return parser {
+        val newline = regTerm("\\n\\s*", "newline", false)
+
         val file = nonTerm("file")
         val packageHeader = nonTerm("packageHeader")
         val importHeader = nonTerm("importHeader")
@@ -705,11 +708,13 @@ fun cryptParser(): Compiler {
         rule(classBody, leftCurlyBracket
                 + zeroOrMore(classMemberDeclaration + optional(semis))
                 + rightCurlyBracket
+                + semis
         )
         rule(enumClassBody, leftCurlyBracket
                 + optional(enumEntries)
                 + zeroOrMore(classMemberDeclaration + optional(semis))
                 + rightCurlyBracket
+                + semis
         )
         rule(enumEntries, enumEntry + zeroOrMore(comma + enumEntry) + optional(comma))
         rule(enumEntry, zeroOrMore(modifier) + ident + optional(valueArguments) + optional(classBody))
@@ -818,8 +823,8 @@ fun cryptParser(): Compiler {
         rule(typeParam, zeroOrMore(typeParameterModifier) + ident + optional(colon + type))
 
         rule(ident, identBasic or identStr)
-        rule(semi, semiInternal + optional(newline))
-        rule(semis, oneOrMore(semiInternal))
+        rule(semi, semiInternal)
+        rule(semis, semiInternal)
         rule(semiInternal, newline or semicolon or end)
     }
 }
@@ -919,7 +924,7 @@ class StringLexeme(identBasic: TerminalLexeme,
                     term.token(Code(expInput))?.let {
                         if (expInput.startsWith(it.content)) {
                             ParsableElement(
-                                Compiler.AST(term, null, 0, it),
+                                Compiler.AST(term),
                                 "$" + it.content
                             )
                         } else {

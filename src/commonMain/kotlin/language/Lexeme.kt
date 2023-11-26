@@ -52,9 +52,10 @@ open class Lexeme(val desc: String = ""): Comparable<Lexeme> {
     }
 
 }
+
 abstract class TerminalLexeme(desc: String): Lexeme(desc) {
     protected open fun trim(code: Code): Code {
-        val result = Regex("\\s+").find(code.current())
+        val result = Regex("[;\\s]+").find(code.current())
         return if (result == null || result.range.first != 0) code else code.move(result.value.length)
     }
     abstract fun token(code: Code): Token?
@@ -62,8 +63,9 @@ abstract class TerminalLexeme(desc: String): Lexeme(desc) {
 }
 open class ExactLexeme(val content: String, desc: String = content): TerminalLexeme(desc) {
     override fun token(code: Code): Token? {
-        return if (code.current().startsWith(content)) {
-            Token(content, code.position(), emptySet(), desc)
+        val trimmed = trim(code)
+        return if (trimmed.current().startsWith(content)) {
+            Token(content, trimmed.position(), emptySet(), desc)
         } else {
             null
         }
@@ -82,20 +84,28 @@ class WordLexeme(content: String, desc: String = content): ExactLexeme(content, 
         // checking for content to match
         val exact = super.token(code)
         // checking that next symbol is not a letter or digit, i.e. not a part of the word
-        return if (exact != null && !code.current()[exact.content.length].isLetterOrDigit()) {
-            exact
+        return if (exact != null) {
+            if (code.at(exact.position.index + exact.content.length).current()[0].isLetterOrDigit()) {
+                null
+            } else {
+                exact
+            }
         } else {
             null
         }
     }
 }
-open class RegexLexeme(private val regex: Regex, private val name: String): TerminalLexeme(name) {
+open class RegexLexeme(pattern: String, private val name: String, private val trim: Boolean = true): TerminalLexeme(name) {
+
+    private val regex = Regex(pattern)
+
     override fun token(code: Code): Token? {
-        val result = regex.find(code.current())
+        val trimmed = if (trim) trim(code) else code
+        val result = regex.find(trimmed.current())
         if (result == null || result.range.first != 0) {
             return null
         }
-        return RegexToken(result.value, code.position(), setOf(name, "regex"), result)
+        return RegexToken(result.value, trimmed.position(), setOf(name, "regex"), result)
     }
 
     override fun match(token: Token): Boolean {
@@ -107,7 +117,8 @@ open class RegexLexeme(private val regex: Regex, private val name: String): Term
     }
 }
 class CustomLexeme(val tokenLambda: (Code) -> Token?,
-                   val matchLambda: (Token) -> Boolean): TerminalLexeme("custom") {
+                   val matchLambda: (Token) -> Boolean,
+                   desc: String = "custom"): TerminalLexeme(desc) {
     override fun token(code: Code): Token? = tokenLambda(code)
     override fun match(token: Token): Boolean = matchLambda(token)
 }

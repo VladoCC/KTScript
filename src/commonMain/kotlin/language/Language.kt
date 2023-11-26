@@ -3,8 +3,8 @@ package language
 import Code
 
 public fun language(definition: LanguageContext.() -> Unit, root: Lexeme = Lexeme("root")): Language {
-    val context = LanguageContext(root)
-    val language = Language(context.define(definition), root)
+    val context = LanguageContext(root, definition)
+    val language = Language(context.getRules(), root, context.getNonTerminals(), context.getTerminal())
     context.getCallbacks().forEach {
         it(language)
     }
@@ -14,7 +14,19 @@ public fun language(definition: LanguageContext.() -> Unit, root: Lexeme = Lexem
 /**
  * Describes lexical, grammatical and semantic rules of the language and also generators for it
  */
-class Language(val rules: List<Rule>, val root: Lexeme) {
+class Language(val rules: List<Rule>, val root: Lexeme,
+               private val nonTerminals: Set<Lexeme>, private val terminals: Set<TerminalLexeme>) {
+
+    val ruleMap: Map<Lexeme, List<Rule>>
+
+    init {
+        val map = mutableMapOf<Lexeme, MutableList<Rule>>()
+        rules.forEach {
+            map.getOrPut(it.left) { mutableListOf() }.add(it)
+        }
+        ruleMap = map
+    }
+
     fun subgrammar(root: Lexeme): Language {
         val ruleSet = mutableMapOf<Lexeme, MutableList<Rule>>()
         rules.forEach {
@@ -45,35 +57,34 @@ class Language(val rules: List<Rule>, val root: Lexeme) {
             }
             current.removeAt(0)
         }
-        val language = Language(rulesSub.values.flatten(), root)
+        val language = Language(rulesSub.values.flatten(), root, nonTerminals, terminals)
         // todo decide whether we keep terminals in language or removing this commented terminal stuff
         //  (and all the previous logic for collecting this terminals)
+        //  also define fields nonTerminals and terminals with strictly lexemes included in subgrammar
         // language.terminals.addAll(terminals.filter { it in termsSub })
         return language
     }
 }
 
-class LanguageContext(val root: Lexeme) {
+class LanguageContext(val root: Lexeme, definition: LanguageContext.() -> Unit) {
 
     private val rules: MutableList<Rule> = mutableListOf()
     private val callbacks = mutableListOf<(Language) -> Unit>()
     private val terminals = mutableSetOf<TerminalLexeme>()
     private val nonTerminals = mutableSetOf<Lexeme>()
 
-    val newline = object: RegexLexeme(Regex("\\n\\s*"), "newline") {
-        override fun trim(code: Code): Code {
-            return code
-        }
-    }
     val end = object: TerminalLexeme("END_TERM") {
-        override fun token(code: Code) = null
+        override fun token(code: Code) = if (code.isConsumed()) Token("", code.position(), setOf("END_TERM", "SPECIAL")) else null
         override fun match(token: Token) = token.tags.contains("END_TERM")
     }
 
-    fun define(definition: LanguageContext.() -> Unit): List<Rule> {
+    init {
         definition()
-        return rules
     }
+
+    fun getRules(): List<Rule> = rules;
+    fun getNonTerminals(): Set<Lexeme> = nonTerminals;
+    fun getTerminal(): Set<TerminalLexeme> = terminals
 
     fun getCallbacks(): List<(Language) -> Unit> = callbacks
 
@@ -92,12 +103,11 @@ class LanguageContext(val root: Lexeme) {
         terminals.add(token)
         return token
     }
-    fun regTerm(regex: Regex, name: String): TerminalLexeme {
-        val token = RegexLexeme(regex, name)
+    fun regTerm(regex: String, name: String, trim: Boolean = true): TerminalLexeme {
+        val token = RegexLexeme(regex, name, trim)
         terminals.add(token)
         return token
     }
-    fun regTerm(regex: String, name: String): TerminalLexeme = regTerm(Regex(regex), name)
     fun customTerm(token: (Code) -> Token?, match: (Token) -> Boolean): CustomLexeme {
         val lex = CustomLexeme(token, match)
         terminals.add(lex)

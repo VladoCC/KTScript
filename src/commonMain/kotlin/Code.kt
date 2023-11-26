@@ -9,10 +9,12 @@ class Code private constructor(private val storage: CodeStorage, val pos: Int = 
 
     fun at(index: Int): Code {
         if (index > storage.text.length || index < 0) {
-            throw IllegalArgumentException("Index $index is out of bounds")
+            throw IllegalArgumentException("Index $index is out of bounds, code length: ${storage.text.length}")
         }
         return Code(storage, index)
     }
+
+    fun at(position: Position) = at(position.index)
 
     fun move(step: Int): Code {
         val newPos = pos + step
