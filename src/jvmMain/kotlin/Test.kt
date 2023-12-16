@@ -1,15 +1,18 @@
 import language.Language
+import language.LanguageContext
+import language.Lexeme
 
 fun main() {
-    /*val grammar = cryptParser().language
-    val loops = mutableListOf<Pair<Language.Lexeme, List<Language.Rule>>>()
-    grammar.nonTerminals.forEach {
-        val toCheck = mutableListOf<List<Language.Rule>>()
-        val visited = mutableSetOf(it)
-                
-        toCheck.addAll(grammar.keyedRules[it]?.map { listOf(it) } ?: emptyList())
-        while (toCheck.isNotEmpty()) {
-
-        }
-    }*/
+    val context = LanguageContext(Lexeme("root")) {
+        val b = nonTerm("(")
+        val c = nonTerm("c")
+        val d = nonTerm(",")
+        val e = nonTerm(")")
+        val zeroPlus = zeroOrMore(d + c)
+        val optD = optional(d)
+        val optCont = c + zeroPlus + optD
+        val optOut = optional(optCont)
+        rule(root, b + optOut + e)
+    }
+    val test = 0;
 }

@@ -1,10 +1,7 @@
 package language
 
 import Code
-import Compiler
-import Position
 import getCount
-import kotlin.native.concurrent.ThreadLocal
 
 open class Lexeme(val desc: String = ""): Comparable<Lexeme> {
     protected val id = getCount()
@@ -14,6 +11,9 @@ open class Lexeme(val desc: String = ""): Comparable<Lexeme> {
     }
     operator fun plus(optional: Optional): OptionalProduct {
         return OptionalProduct(Product(this), optional)
+    }
+    operator fun plus(optional: Optionals): OptionalProduct {
+        return OptionalProduct(Product(this), optional.optionals)
     }
     infix fun or(product: Product): ProductList {
         return Product(this) or product
@@ -53,17 +53,30 @@ open class Lexeme(val desc: String = ""): Comparable<Lexeme> {
 
 }
 
-abstract class TerminalLexeme(desc: String): Lexeme(desc) {
-    protected open fun trim(code: Code): Code {
-        val result = Regex("[;\\s]+").find(code.current())
-        return if (result == null || result.range.first != 0) code else code.move(result.value.length)
+abstract class TerminalLexeme(desc: String, private val skipList: List<Skip>): Lexeme(desc) {
+    protected open fun skip(code: Code): Code {
+        val codeStr = code.current()
+        var pos = 0
+        var search = true
+        while (search) {
+            search = false
+            skipList.forEach {
+                val step = it.consume(codeStr, pos)
+                if (step > 0) {
+                    search = true
+                    pos += step
+                    return@forEach
+                }
+            }
+        }
+        return code.move(pos)
     }
     abstract fun token(code: Code): Token?
     abstract fun match(token: Token): Boolean
 }
-open class ExactLexeme(val content: String, desc: String = content): TerminalLexeme(desc) {
+open class ExactLexeme(val content: String, desc: String = content, skipList: List<Skip>): TerminalLexeme(desc, skipList) {
     override fun token(code: Code): Token? {
-        val trimmed = trim(code)
+        val trimmed = skip(code)
         return if (trimmed.current().startsWith(content)) {
             Token(content, trimmed.position(), emptySet(), desc)
         } else {
@@ -79,7 +92,7 @@ open class ExactLexeme(val content: String, desc: String = content): TerminalLex
         return "ExactLexeme(content='$desc', id='$id')"
     }
 }
-class WordLexeme(content: String, desc: String = content): ExactLexeme(content, desc) {
+class WordLexeme(content: String, desc: String = content, skipList: List<Skip>): ExactLexeme(content, desc, skipList) {
     override fun token(code: Code): Token? {
         // checking for content to match
         val exact = super.token(code)
@@ -95,12 +108,12 @@ class WordLexeme(content: String, desc: String = content): ExactLexeme(content, 
         }
     }
 }
-open class RegexLexeme(pattern: String, private val name: String, private val trim: Boolean = true): TerminalLexeme(name) {
+open class RegexLexeme(pattern: String, private val name: String, skipList: List<Skip>): TerminalLexeme(name, skipList) {
 
     private val regex = Regex(pattern)
 
     override fun token(code: Code): Token? {
-        val trimmed = if (trim) trim(code) else code
+        val trimmed = skip(code)
         val result = regex.find(trimmed.current())
         if (result == null || result.range.first != 0) {
             return null
@@ -118,7 +131,7 @@ open class RegexLexeme(pattern: String, private val name: String, private val tr
 }
 class CustomLexeme(val tokenLambda: (Code) -> Token?,
                    val matchLambda: (Token) -> Boolean,
-                   desc: String = "custom"): TerminalLexeme(desc) {
+                   desc: String = "custom", skipList: List<Skip>): TerminalLexeme(desc, skipList) {
     override fun token(code: Code): Token? = tokenLambda(code)
     override fun match(token: Token): Boolean = matchLambda(token)
 }

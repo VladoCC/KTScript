@@ -91,32 +91,85 @@ class Product(vararg lexemes: Lexeme): List<Lexeme>, ProductProducer {
     }
 }
 
-typealias Optional = Array<Product>
+data class Optional(val product: Product) {
+    operator fun plus(lexeme: Lexeme): OptionalProduct {
+        return OptionalProduct(null, this) + lexeme
+    }
 
-class OptionalProduct(product: Product?, optional: Optional): ProductProducer {
+    operator fun plus(optional: Optional): OptionalProduct {
+        return OptionalProduct(null, this) + optional
+    }
+}
+
+data class Optionals(val optionals: List<Optional>) {
+    operator fun plus(lexeme: Lexeme): OptionalProduct {
+        return OptionalProduct(null, optionals) + lexeme
+    }
+
+    operator fun plus(optional: Optional): OptionalProduct {
+        return OptionalProduct(null, optionals) + optional
+    }
+
+    operator fun plus(optional: Optionals): OptionalProduct {
+        return OptionalProduct(null, optionals) + optional.optionals
+    }
+}
+
+class OptionalProduct(product: Product?, optional: List<Optional>): ProductProducer {
     private var products = mutableListOf<List<Lexeme>>()
+    private var epsilonRule = true
+
+    constructor(product: Product?, optional: Optional): this(product, listOf(optional))
 
     init {
         if (product != null) {
             products.add(product.getTokens())
+            epsilonRule = false
         } else {
             products.add(emptyList())
         }
-        this + optional
+        if (optional != null) {
+            this + optional
+        }
     }
 
     operator fun plus(lexeme: Lexeme): OptionalProduct {
         products = products.map { it + lexeme } as MutableList<List<Lexeme>>
+        if (epsilonRule) {
+            products.add(listOf(lexeme))
+            epsilonRule = false
+        }
         return this
     }
 
     operator fun plus(optional: Optional): OptionalProduct {
-        optional.forEach {
-            products.indices.forEach {i ->
-                products.add(products[i] + it.getTokens())
+        val product = optional.product
+        // for rule A -> BC?:
+        // A -> BC? === A -> B | BC
+        // we already have a product for all possible A -> B
+        // we copy all of them and add C nj rhe end to get all the possible A -> BC
+        products.addAll(products.map { it + product })
+        if (epsilonRule) {
+            products.add(product)
+        }
+        return this
+    }
+
+    operator fun plus(optional: List<Optional>): OptionalProduct {
+        val size = products.size
+        optional.forEach { optional ->
+            products.addAll((0 until size).map { products[it] + optional.product })
+        }
+        if (epsilonRule) {
+            optional.forEach {
+                products.add(it.product)
             }
         }
         return this
+    }
+
+    operator fun plus(optional: Optionals): OptionalProduct {
+        return this + optional.optionals
     }
 
     override fun produce(): List<Product> {
@@ -175,6 +228,8 @@ data class Rule(val left: Lexeme, val right: Product): Comparable<Rule> {
     }
 
     override fun toString(): String {
-        return "Rule(index=$index, left=$left, right=$right)"
+        return "[${left.desc} ->${right.getTokens().fold("") { acc, it ->
+            "$acc ${it.desc}"
+        }}] Rule(index=$index, left=$left, right=$right)"
     }
 }

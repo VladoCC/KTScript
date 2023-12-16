@@ -33,7 +33,8 @@ class Code private constructor(private val storage: CodeStorage, val pos: Int = 
     }
 
     override fun toString(): String {
-        return "Code(word=`${current().split(Regex("\\s")).first { it.isNotBlank() }}`, pos=$pos (${position()}))"
+        val word = current().split(Regex("\\s")).firstOrNull { it.isNotBlank() }?: ""
+        return "Code(word=`${word}`, pos=$pos (${position()}))"
     }
 
 

@@ -2,8 +2,8 @@ package language
 
 import Code
 
-public fun language(definition: LanguageContext.() -> Unit, root: Lexeme = Lexeme("root")): Language {
-    val context = LanguageContext(root, definition)
+public fun language(definition: LanguageContext.() -> Unit, skip: List<Skip>, root: Lexeme = Lexeme("root")): Language {
+    val context = LanguageContext(root, skip, definition)
     val language = Language(context.getRules(), root, context.getNonTerminals(), context.getTerminal())
     context.getCallbacks().forEach {
         it(language)
@@ -66,14 +66,18 @@ class Language(val rules: List<Rule>, val root: Lexeme,
     }
 }
 
-class LanguageContext(val root: Lexeme, definition: LanguageContext.() -> Unit) {
+interface Skip {
+    fun consume(code: String, pos: Int): Int
+}
+
+class LanguageContext(val root: Lexeme, val skip: List<Skip> = emptyList(), definition: LanguageContext.() -> Unit) {
 
     private val rules: MutableList<Rule> = mutableListOf()
     private val callbacks = mutableListOf<(Language) -> Unit>()
     private val terminals = mutableSetOf<TerminalLexeme>()
     private val nonTerminals = mutableSetOf<Lexeme>()
 
-    val end = object: TerminalLexeme("END_TERM") {
+    val end = object: TerminalLexeme("END_TERM", skip) {
         override fun token(code: Code) = if (code.isConsumed()) Token("", code.position(), setOf("END_TERM", "SPECIAL")) else null
         override fun match(token: Token) = token.tags.contains("END_TERM")
     }
@@ -93,33 +97,33 @@ class LanguageContext(val root: Lexeme, definition: LanguageContext.() -> Unit) 
         nonTerminals.add(res)
         return res
     }
-    fun term(content: String, desc: String? = null): TerminalLexeme {
-        val token = ExactLexeme(content, desc?: content)
+    fun term(content: String, desc: String? = null, skipList: List<Skip> = skip): TerminalLexeme {
+        val token = ExactLexeme(content, desc?: content, skipList)
         terminals.add(token)
         return token
     }
-    fun wordTerm(content: String, desc: String? = null): WordLexeme {
-        val token = WordLexeme(content, desc?: content)
+    fun wordTerm(content: String, desc: String? = null, skipList: List<Skip> = skip): WordLexeme {
+        val token = WordLexeme(content, desc?: content, skipList)
         terminals.add(token)
         return token
     }
-    fun regTerm(regex: String, name: String, trim: Boolean = true): TerminalLexeme {
-        val token = RegexLexeme(regex, name, trim)
+    fun regTerm(regex: String, name: String, skipList: List<Skip> = skip): TerminalLexeme {
+        val token = RegexLexeme(regex, name, skipList)
         terminals.add(token)
         return token
     }
-    fun customTerm(token: (Code) -> Token?, match: (Token) -> Boolean): CustomLexeme {
-        val lex = CustomLexeme(token, match)
+    fun customTerm(token: (Code) -> Token?, match: (Token) -> Boolean, skipList: List<Skip> = skip): CustomLexeme {
+        val lex = CustomLexeme(token, match, skipList = skipList)
         terminals.add(lex)
         return lex
     }
     fun registerTerm(lex: TerminalLexeme) = terminals.add(lex).let { lex }
-    fun optional(product: OptionalProduct) = product.produce().toTypedArray()
-    fun optional(product: Product): Optional = arrayOf(product)
+    fun optional(product: OptionalProduct): Optionals = Optionals(product.produce().map { Optional(it) })
+    fun optional(product: Product): Optional = Optional(product)
     fun optional(lexeme: Lexeme): Optional = optional(Product(lexeme))
     fun oneOrMore(product: Product): Lexeme {
         val tokens = product.getTokens()
-        val name = "(${tokens.joinToString(" ") { it.desc }})+"
+        val name = "[${tokens.joinToString(" ") { it.desc }}]+"
         val list = nonTerm(name)
         rule(list, product + optional(list))
         return list
@@ -127,7 +131,7 @@ class LanguageContext(val root: Lexeme, definition: LanguageContext.() -> Unit) 
     fun oneOrMore(lexeme: Lexeme) = oneOrMore(Product(lexeme))
     fun oneOrMore(product: OptionalProduct): Lexeme {
         val prods = product.produce().map { it.getTokens() }.joinToString(" | ") { it.joinToString(" ") { it.desc } }
-        val name = "(${prods})+"
+        val name = "[${prods}]+"
         val list = nonTerm(name)
         product.produce().forEach {
             rule(list, it + optional(list))
@@ -147,10 +151,6 @@ class LanguageContext(val root: Lexeme, definition: LanguageContext.() -> Unit) 
     }
     fun rule(left: Lexeme, right: Lexeme): Rule {
         return rule(left, Product(right)).first()
-    }
-
-    operator fun Optional.plus(lexeme: Lexeme): OptionalProduct {
-        return OptionalProduct(null, this) + lexeme
     }
 
     fun addOnLanguageConstructedCallback(callback: (Language) -> Unit) = callbacks.add(callback)

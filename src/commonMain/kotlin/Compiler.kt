@@ -13,8 +13,8 @@ fun compile(code: String, task: Task, compiler: Compiler) {
     }
 }
 
-fun parser(definition: LanguageContext.() -> Unit): Compiler {
-    return Compiler(language(definition))
+fun parser(skip: List<Skip> = emptyList(), definition: LanguageContext.() -> Unit): Compiler {
+    return Compiler(language(definition, skip))
 }
 
 // TODO rename correctly
@@ -23,10 +23,9 @@ fun parser(definition: LanguageContext.() -> Unit): Compiler {
 // TODO decide whether compiler is one-shot thing (i.e. one object for compiling one string) and move `code: String` into constructor
 // or multi-use and then remove process spicific global variables
 open class Compiler(val language: Language) {
-    private val forest = mutableMapOf<State, MutableList<Pair<Tree<State>, Int>>>()
     private val nodeMap = mutableMapOf<Lexeme, Node>()
     private val unfoldMap = mutableMapOf<Lexeme, List<Jump>>()
-    private val connections = mutableMapOf<Node, List<Connection>>()
+    private val connections = mutableMapOf<Set<Node>, List<Connection>>()
 
     fun process(code: String): AST? {
         return parse(Code(code))
@@ -60,20 +59,23 @@ open class Compiler(val language: Language) {
     }
 
     private fun match(node: Node, code: Code): AST? {
-        val contexts = mutableListOf(Context(node, code.pos))
-        var result: Pair<Node, Position>? = null
+        val positions = mutableListOf(code.pos)
+        val contexts = mutableMapOf(code.pos to mutableSetOf(node))
+        var result: Position? = null
 
         while (contexts.isNotEmpty()) {
-            val context = contexts.removeFirst()
-            val connections = connections(context.node)
-            val pos = context.position
+            val pos = positions.removeFirst()
+            val inProcess = contexts[pos]!!
+            contexts.remove(pos)
+            val connections = connections(inProcess)
             val current = code.at(pos)
+            println("Searching match at position ${current.position()}: $current")
 
             connections.forEach { connection ->
                 if (connection.lexeme == null) {
                     // todo collect results
                     println("Success")
-                    result = context.node to current.position()
+                    result = current.position()
                     return@forEach
                 }
 
@@ -84,7 +86,19 @@ open class Compiler(val language: Language) {
                     //  cases in which whitespace is a delimeter and neccessary token, but it's followed
                     //  by other whitespaces that are to be omitted
                     connection.target.forEach {
-                        contexts.add(Context(it, token.position.index + token.content.length))
+                        var index = positions.size - 1
+                        val posNew = token.position.index + token.content.length
+                        if (!contexts.containsKey(posNew)) {
+                            while (index >= 0 && positions[index] >= posNew) {
+                                index--
+                            }
+                            if (index == positions.size - 1) {
+                                positions.add(posNew)
+                            } else {
+                                positions.add(index + 1, posNew)
+                            }
+                        }
+                        contexts.getOrPut(posNew) { mutableSetOf() }.add(it)
                     }
                 }
             }
@@ -94,13 +108,12 @@ open class Compiler(val language: Language) {
             }
         }
         println("Found: ${result != null}")
-        result?.let { println("Position: ${result!!.second}") }
+        result?.let { println("Position: ${result!!}") }
         // todo: add ast creation and result processing
         return null
     }
 
-    object EmptyStack: Stack(mutableListOf(), FinishNode)
-    object FinishNode: Node(emptyList(), -1, emptyList())
+    object EmptyStack: Stack(Node(emptyList(), -1, emptyList()), nodes = mutableListOf())
 
     private fun getNode(lexeme: Lexeme): Node {
         return nodeMap.getOrPut(lexeme) {
@@ -116,7 +129,7 @@ open class Compiler(val language: Language) {
     private fun unfold(lexeme: Lexeme, encountered: MutableSet<Lexeme> = mutableSetOf()): List<Jump> {
         val stored = unfoldMap[lexeme]
         if (stored != null) {
-            println("Unfold ${lexeme.desc} from map")
+            //println("Unfold ${lexeme.desc} from map")
             return stored
         }
 
@@ -152,17 +165,19 @@ open class Compiler(val language: Language) {
         }
 
         unfoldMap[lexeme] = result
-        println("Unfold ${lexeme.desc} finished")
+        //println("Unfold ${lexeme.desc} finished")
         return result
     }
 
-    private fun connections(node: Node): List<Connection> {
-        val saved = connections[node]
+    private fun connections(nodes: Set<Node>): List<Connection> {
+        val saved = connections[nodes]
         if (saved != null) {
             return saved
         }
 
-        val toProcess = mutableListOf(node)
+        val toProcess = nodes.toMutableList()
+        val encountered = mutableSetOf<Node>()
+            .also { it.addAll(nodes) }
         val mapping = mutableMapOf<TerminalLexeme, MutableMap<NodeContent, MutableList<Stack>>>()
         val result = mutableListOf<Connection>()
         while (toProcess.isNotEmpty()) {
@@ -190,25 +205,14 @@ open class Compiler(val language: Language) {
                     }
                     else -> {
                         unfold(lex).forEach { jump ->
-                            println("Creating stack for jump ${lex.desc} -> ${jump.lexeme.desc}")
-                            val stacks = Array<MutableList<Stack>>(jump.offset.size + 1) {
-                                mutableListOf()
-                            }
-                            current.stacks.forEach {
-                                stacks[0].add(it.new(next))
-                            }
-                            // todo look into optimising it, don't like creating new lists every iteration
+                            //println("Creating stack for jump ${lex.desc} -> ${jump.lexeme.desc}")
+                            var stack = Stack(next)
                             jump.offset.mapIndexed { index, it ->
-                                println("Added to stack ${lex.desc} -> ${jump.lexeme.desc} ($index)")
-                                val top = Node(stacks[index], it.dot, it.rules)
-                                stacks[index].indices.forEach { i ->
-                                    val stack = stacks[index][i]
-                                    stacks[index + 1].add(stack.add(top))
-                                }
+                                stack = stack.add(Node(stack, it.dot, it.rules))
                             }
                             val content = NodeContent(1, jump.rules)
                             mapping.getOrPut(jump.lexeme) { mutableMapOf() }
-                                .getOrPut(content) { mutableListOf() }.addAll(stacks.last())
+                                .getOrPut(content) { mutableListOf() }.add(stack)
                         }
                     }
                 }
@@ -220,7 +224,11 @@ open class Compiler(val language: Language) {
                     if (it == EmptyStack) {
                         result.add(Connection(null, Node(emptyList(), -1, emptyList())))
                     } else {
-                        toProcess.add(it.get()!!)
+                        val node = it.get()!!
+                        if (node !in encountered) {
+                            toProcess.add(node)
+                            encountered.add(node)
+                        }
                     }
                 }
             }
@@ -232,7 +240,7 @@ open class Compiler(val language: Language) {
             result.add(Connection(it.key, nodes))
         }
 
-        connections[node] = result
+        connections[nodes] = result
         return result
     }
 
@@ -258,19 +266,46 @@ open class Compiler(val language: Language) {
             get() = connectionInfo.second
     }*/
 
-    open class Node(val stacks: List<Stack>, dot: Int, rules: List<Rule>) {
+    class Node(val stacks: List<Stack>, dot: Int, rules: List<Rule>) {
         val content = NodeContent(dot, rules)
         val dot: Int
             get() = content.dot
         val rules
             get() = content.rules
+
+        constructor(stack: Stack, dot: Int, rules: List<Rule>): this(listOf(stack), dot, rules)
+
+        override fun toString(): String {
+            return "Node(stacks=$stacks, dot=$dot, rules=$rules)"
+        }
+
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other == null || this::class != other::class) return false
+
+            other as Node
+
+            if (stacks != other.stacks) return false
+            if (content != other.content) return false
+
+            return true
+        }
+
+        override fun hashCode(): Int {
+            var result = stacks.hashCode()
+            result = 31 * result + content.hashCode()
+            return result
+        }
     }
 
     data class Connection(val lexeme: TerminalLexeme?, val target: List<Node>) {
         constructor(lexeme: TerminalLexeme?, target: Node): this(lexeme, listOf(target))
     }
 
-    open class Stack(private val nodes: MutableList<Node>, private val root: Node, val prev: Stack? = null) {
+    open class Stack(
+        private val root: Node,
+        private val nodes: MutableList<Node> = mutableListOf()
+    ) {
         private var index: Int = nodes.size - 1
 
         fun get(): Node? {
@@ -283,25 +318,7 @@ open class Compiler(val language: Language) {
             }
         }
 
-        fun pop(): Node? {
-            return get()?.let {
-                index--
-                it
-            }
-        }
-
-        fun new(root: Node): Stack = Stack(mutableListOf(), root, this)
-
-        fun add(node: Node): Stack = Stack(nodes.also { it.add(node) }, root, prev)
-    }
-
-    fun Stack?.new(root: Node): Stack {
-        println("New Stack")
-        return if (this == null) {
-            Stack(mutableListOf(), root)
-        } else {
-            new(root)
-        }
+        fun add(node: Node): Stack = Stack(root, nodes.also { it.add(node) })
     }
 
     data class Jump(val lexeme: TerminalLexeme, val offset: List<NodeContent>, val rules: List<Rule>)
@@ -406,7 +423,7 @@ open class Compiler(val language: Language) {
         }
         parent.children[pos] = child.first
     }*/
-    private fun createTree(state: State, token: Int): Tree<State> {
+    /*private fun createTree(state: State, token: Int): Tree<State> {
         if (!forest.containsKey(state)) {
             forest[state] = mutableListOf()
         }
@@ -414,71 +431,7 @@ open class Compiler(val language: Language) {
         val tree = Tree(state)
         forest[state]!!.add(tree to token)
         return tree
-    }
-
-    class Table(root: Lexeme, size: Int) {
-        private val columns = mutableListOf<Column>()
-
-        init {
-            val rootCol: Column = AppendableSet()
-            val rootState = State(Rule(Lexeme(), Product(root)))
-            rootCol.add(rootState)
-            columns.add(rootCol)
-        }
-
-        operator fun get(index: Int): Column {
-            (0..(index - columns.size)).forEach { _ ->
-                columns.add(AppendableSet())
-            }
-            return columns[index]
-        }
-
-        fun last() = columns.last()
-        val indices
-            get() = columns.indices
-        val size
-            get() = columns.size
-    }
-
-    data class State(
-        val rule: Rule,
-    ) {
-        var dot: Int = 0
-
-        fun isComplete() = dot == rule.right.size
-        fun next(): Lexeme? {
-            return if (!isComplete()) rule.right[dot] else null
-        }
-
-        fun prev(): Lexeme? {
-            return if (dot > 0) rule.right[dot - 1] else null
-        }
-
-        fun forward() {
-            dot++
-        }
-
-        override fun equals(other: Any?): Boolean {
-            if (this === other) return true
-
-            other as State
-
-            if (rule != other.rule) return false
-            if (dot != other.dot) return false
-
-            return true
-        }
-
-        override fun hashCode(): Int {
-            var result = rule.hashCode()
-            result = 31 * result + dot
-            return result
-        }
-
-        override fun toString(): String {
-            return "State(rule=$rule, dot=$dot)"
-        }
-    }
+    }*/
 
     open class Tree<T>(protected val content: T) : Iterable<T> {
         protected val children = mutableListOf<Tree<T>>()
@@ -650,113 +603,6 @@ open class Compiler(val language: Language) {
                 return token.toString()
             }
         }
-    }
-}
-
-typealias Column = AppendableSet<Compiler.State>
-
-class AppendableSet<T> : MutableSet<T> {
-    val set = mutableSetOf<T>()
-    private var first: Element<T>? = null
-    private var last: Element<T>? = null
-
-    fun first() = set.first()
-    fun last() = set.last()
-
-    class Element<T>(val current: T?) {
-        var next: Element<T>? = null
-    }
-
-    class AppendableIterator<T>(first: Element<T>) : MutableIterator<T> {
-        var current: Element<T>
-        var prev: Element<T> = Element(null)
-
-        init {
-            current = Element(null)
-            current.next = first
-        }
-
-        override fun hasNext(): Boolean {
-            return current.next != null
-        }
-
-        override fun next(): T {
-            val next = current.next
-            if (next?.current == null) {
-                throw NoSuchElementException()
-            }
-            prev = current
-            current = next
-            return next.current
-        }
-
-        override fun remove() {
-            val next = current.next
-            prev.next = next
-            current = prev
-        }
-    }
-
-    override fun add(element: T): Boolean {
-        val res = set.add(element)
-        if (res) {
-            addElem(element)
-        }
-        return res
-    }
-
-    private fun addElem(element: T) {
-        val elem = Element(element)
-        if (first == null) {
-            first = elem
-        }
-        if (last != null) {
-            last!!.next = elem
-        }
-        last = elem
-    }
-
-    override fun addAll(elements: Collection<T>): Boolean {
-        val res = set.addAll(elements)
-        if (res) {
-            elements.forEach { addElem(it) }
-        }
-        return res
-    }
-
-    override val size: Int
-        get() = set.size
-
-    override fun clear() {
-        set.clear()
-    }
-
-    override fun isEmpty(): Boolean {
-        return set.isEmpty()
-    }
-
-    override fun containsAll(elements: Collection<T>): Boolean {
-        return set.containsAll(elements)
-    }
-
-    override fun contains(element: T): Boolean {
-        return set.contains(element)
-    }
-
-    override fun iterator(): MutableIterator<T> {
-        return AppendableIterator(first ?: Element(null))
-    }
-
-    override fun retainAll(elements: Collection<T>): Boolean {
-        return set.retainAll(elements.toSet())
-    }
-
-    override fun removeAll(elements: Collection<T>): Boolean {
-        return set.removeAll(elements.toSet())
-    }
-
-    override fun remove(element: T): Boolean {
-        return set.remove(element)
     }
 }
 

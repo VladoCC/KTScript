@@ -1,15 +1,68 @@
-import language.Language
-import language.RegexLexeme
-import language.TerminalLexeme
-import language.Token
+import language.*
 
 fun run(code: String, task: Task) {
     compile(code, task, cryptParser())
 }
 
 fun cryptParser(): Compiler {
-    return parser {
-        val newline = regTerm("\\n\\s*", "newline", false)
+    val regexSkip = object: Skip {
+        private val regex = Regex("[;\\s]+")
+
+        override fun consume(code: String, pos: Int): Int {
+            val result = regex.matchAt(code, pos)
+            if (result != null) {
+                return result.value.length
+            }
+            return 0
+        }
+    }
+    val singleLineCommentSkip = object: Skip {
+        override fun consume(code: String, pos: Int): Int {
+            if (code.length > pos + 1 && code[pos] == '/' && code[pos + 1] == '/') {
+                var move = 2
+                while (code.length > pos + move && code[pos + move] != '\n') {
+                    move += 1
+                }
+                return move + 1
+            }
+            return 0
+        }
+    }
+
+    val multiLineCommentSkip = object: Skip {
+        override fun consume(code: String, pos: Int): Int {
+            if (code.length > pos + 1 && code[pos] == '/' && code[pos + 1] == '*') {
+                var counter = 1
+                var move = 3
+                while (true) {
+                    if (pos + move >= code.length) {
+                        return code.length - pos
+                    }
+
+                    if (code[pos + move - 1] == '*' && code[pos + move] == '/') {
+                        counter--
+                        if (counter == 0) {
+                            break
+                        }
+                        move++
+                    } else if (code[pos + move - 1] == '/' && code[pos + move] == '*') {
+                        counter++
+                        move++
+                    }
+                    move++
+                }
+                return move + 1
+            }
+            return 0
+        }
+    }
+
+    return parser(listOf(regexSkip, singleLineCommentSkip, multiLineCommentSkip)) {
+        val newline = regTerm(
+            "\\n\\s*",
+            "newline",
+            listOf(singleLineCommentSkip, multiLineCommentSkip)
+        )
 
         val file = nonTerm("file")
         val packageHeader = nonTerm("packageHeader")
@@ -207,7 +260,8 @@ fun cryptParser(): Compiler {
         val stringLiteral = registerTerm(
             StringLexeme(
                 identBasic,
-                identStr
+                identStr,
+                skip
             ).apply {
                 addOnLanguageConstructedCallback {
                     setExpressionLanguage(it.subgrammar(expression))
@@ -230,6 +284,10 @@ fun cryptParser(): Compiler {
         val externalTerm = wordTerm("external")
         val abstractTerm = wordTerm("abstract")
         val noinlineTerm = wordTerm("noinline")
+        val propertyTerm = wordTerm("property")
+        val receiverTerm = wordTerm("receiver")
+        val setparamTerm = wordTerm("setparam")
+        val delegateTerm = wordTerm("delegate")
         val dynamicTerm = wordTerm("dynamic")
         val packageTerm = wordTerm("package")
         val finallyTerm = wordTerm("finally")
@@ -240,7 +298,7 @@ fun cryptParser(): Compiler {
         val objectTerm = wordTerm("object")
         val returnTerm = wordTerm("return")
         val publicTerm = wordTerm("public")
-        val import = wordTerm("import")
+        val importTerm = wordTerm("import")
         val sealedTerm = wordTerm("sealed")
         val inlineTerm = wordTerm("inline")
         val varargTerm = wordTerm("vararg")
@@ -255,6 +313,8 @@ fun cryptParser(): Compiler {
         val infixTerm = wordTerm("infix")
         val constTerm = wordTerm("const")
         val finalTerm = wordTerm("final")
+        val fieldTerm = wordTerm("field")
+        val paramTerm = wordTerm("param")
         val trueTerm = wordTerm("true")
         val fileTerm = wordTerm("file")
         val nullTerm = wordTerm("null")
@@ -344,8 +404,8 @@ fun cryptParser(): Compiler {
         )
 
         rule(packageHeader, packageTerm + chainIdent + semi)
-        rule(importHeader, import + chainIdent + optional(importEnding) + semi)
-        rule(topLevelObject, declaration + optional(semis))
+        rule(importHeader, importTerm + chainIdent + optional(importEnding) + semi)
+        rule(topLevelObject, declaration)
         rule(declaration, classDeclaration or objectDeclaration or
                 funDeclaration or propertyDeclaration or typeAlias)
 
@@ -469,10 +529,12 @@ fun cryptParser(): Compiler {
         rule(typeArguments, leftArrow
                 + typeProjection
                 + zeroOrMore(comma + typeProjection)
-                + comma
+                + optional(comma)
                 + rightArrow
         )
         rule(typeProjection, mult or zeroOrMore(typeProjectionModifier) + type)
+        rule(useSite, fieldTerm or propertyTerm or getTerm or setTerm
+                or receiverTerm or paramTerm or setparamTerm or delegateTerm)
 
         rule(type, optional(typeModifier) + typeSpec)
         rule(typeSpec, functionType or parenthesizedType or nullableType or typeReference)
@@ -610,7 +672,7 @@ fun cryptParser(): Compiler {
         )
         rule(finallyBlock, finallyTerm + block)
         rule(jumpExpression, throwTerm + expression
-                or returnTerm + optional(at + ident) + optional(ident)
+                or returnTerm + optional(at + ident) + optional(expression)
                 or continueTerm
                 or breakTerm
         )
@@ -647,6 +709,7 @@ fun cryptParser(): Compiler {
                 + zeroOrMore(comma + lambdaParam)
                 + optional(comma)
         )
+        rule(lambdaParam, variableDeclaration or multiVariableDeclaration + optional(colon + type))
 
         rule(infixOperator, inOperator + elvisExpression or isOperator + type)
         rule(inOperator, inTerm or notInTerm)
@@ -702,17 +765,17 @@ fun cryptParser(): Compiler {
         rule(typeParameterModifier, typeProjectionModifier or reifiedTerm)
 
         rule(statements, semis or
-                statement + zeroOrMore(semis + statement) + optional(semis))
+                statement + zeroOrMore(semis + statement))
         rule(statement, declaration or assignment or expression or loopStatement)
 
         rule(classBody, leftCurlyBracket
-                + zeroOrMore(classMemberDeclaration + optional(semis))
+                + zeroOrMore(classMemberDeclaration)
                 + rightCurlyBracket
                 + semis
         )
         rule(enumClassBody, leftCurlyBracket
                 + optional(enumEntries)
-                + zeroOrMore(classMemberDeclaration + optional(semis))
+                + zeroOrMore(classMemberDeclaration)
                 + rightCurlyBracket
                 + semis
         )
@@ -730,9 +793,9 @@ fun cryptParser(): Compiler {
         rule(whenEntry, whenCondition
                 + zeroOrMore(comma + whenCondition)
                 + optional(comma)
-                + rightArrow + controlStructureBody + optional(semi)
+                + singleRightArrow + controlStructureBody + optional(semi)
                 or elseTerm
-                + rightArrow
+                + singleRightArrow
                 + controlStructureBody
                 + optional(semi))
         rule(whenCondition, expression or rangeTest or typeTest)
@@ -756,7 +819,7 @@ fun cryptParser(): Compiler {
                 functionValueParameter
                         + zeroOrMore(comma + functionValueParameter)
                         + optional(comma)
-            )
+                    )
                     + rightBracket
         )
         rule(functionValueParameter, zeroOrMore(parameterModifier)
@@ -830,7 +893,7 @@ fun cryptParser(): Compiler {
 }
 
 class StringLexeme(identBasic: TerminalLexeme,
-                   identStr: TerminalLexeme): TerminalLexeme("string") {
+                   identStr: TerminalLexeme, skipList: List<Skip>): TerminalLexeme("string", skipList) {
     private val expressionMatcher = ExpressionMatcher()
     private val identBasicMatcher = TerminalMatcher(identBasic)
     private val identStrMatcher = TerminalMatcher(identStr)
@@ -840,7 +903,8 @@ class StringLexeme(identBasic: TerminalLexeme,
     }
 
     override fun token(code: Code): StringToken? {
-        var text = code.current()
+        val trimmed = skip(code)
+        var text = trimmed.current()
         val matchers: Array<Matcher>
         val quot: String
         val postprocessor: (String) -> Unit
@@ -898,7 +962,7 @@ class StringLexeme(identBasic: TerminalLexeme,
         text = text.drop(quot.length)
         postprocessor(text)
         val content = elements.joinToString("") { it.content }
-        return StringToken(quot + content + quot, code.position(), setOf("string"), elements)
+        return StringToken(quot + content + quot, trimmed.position(), setOf("string"), elements)
     }
 
     override fun match(token: Token) = token.tags.contains("string")
