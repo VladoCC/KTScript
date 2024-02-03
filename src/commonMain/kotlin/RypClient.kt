@@ -898,6 +898,12 @@ class StringLexeme(identBasic: TerminalLexeme,
     private val identBasicMatcher = TerminalMatcher(identBasic)
     private val identStrMatcher = TerminalMatcher(identStr)
 
+
+    /**
+     * todo: compiler of expression matcher does not use any of caches created by parent compiler, recreating
+     *  all of the Jumps for every expression lexeme
+     *  Reusing those would help speed string processing up and is implied by the idea of ALL(*)
+     */
     fun setExpressionLanguage(language: Language) {
         expressionMatcher.compiler = Compiler(language)
     }

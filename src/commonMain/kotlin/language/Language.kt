@@ -17,12 +17,12 @@ public fun language(definition: LanguageContext.() -> Unit, skip: List<Skip>, ro
 class Language(val rules: List<Rule>, val root: Lexeme,
                private val nonTerminals: Set<Lexeme>, private val terminals: Set<TerminalLexeme>) {
 
-    val ruleMap: Map<Lexeme, List<Rule>>
+    val ruleMap: Map<Lexeme, Set<Rule>>
 
     init {
-        val map = mutableMapOf<Lexeme, MutableList<Rule>>()
+        val map = mutableMapOf<Lexeme, MutableSet<Rule>>()
         rules.forEach {
-            map.getOrPut(it.left) { mutableListOf() }.add(it)
+            map.getOrPut(it.left) { mutableSetOf() }.add(it)
         }
         ruleMap = map
     }

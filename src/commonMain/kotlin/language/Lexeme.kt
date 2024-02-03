@@ -53,19 +53,19 @@ open class Lexeme(val desc: String = ""): Comparable<Lexeme> {
 
 }
 
-abstract class TerminalLexeme(desc: String, private val skipList: List<Skip>): Lexeme(desc) {
+abstract class TerminalLexeme(desc: String, private val skipList: List<Skip>): Lexeme("`$desc`") {
     protected open fun skip(code: Code): Code {
         val codeStr = code.current()
         var pos = 0
         var search = true
         while (search) {
             search = false
-            skipList.forEach {
+            for (it in skipList) {
                 val step = it.consume(codeStr, pos)
                 if (step > 0) {
                     search = true
                     pos += step
-                    return@forEach
+                    break
                 }
             }
         }
